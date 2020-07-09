@@ -67,7 +67,7 @@ void setup()
   lcd.print("stage 2020");
    lcd.setCursor(1,2);
   lcd.print("garcia");
-   lcd.setCursor(1,3);
+  lcd.setCursor(1,3);
   lcd.print("neufo");
 
   delay(1000);
@@ -213,4 +213,16 @@ void sensRotation()
   {
     counter--;
   }
+}
+/*------------------------------------------------------------------------------
+   AverageAdc()
+  ------------------------------------------------------------------------------
+   Descriptif: calcul une moyenne sur 5 des valeur du convertisseur analogique.
+   Entrée    : valeur ADC
+   Sortie    : --
+------------------------------------------------------------------------------*/
+void FixedTextLcd ()
+{
+  
+  
 }
