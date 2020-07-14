@@ -11,79 +11,95 @@
 #define DEFAULT_MOTOR_STEPS 200
 
 
-// Main board 1921 - IC7 digital output bit definition for driver enable
-#define GATE_A_ENABLE_BIT 6
+
 
 //  Frame slots for commands
-#define SYNC_SOF  0
-#define MCMD  1
-#define SPEED 2
-#define STEPSCOUNT 3
-#define SYNC_EOF  5
 #define BTN_GRBTGL 6
 #define ADC_POT A0
-#define THRESHOLD_HIGH 900
-#define THRESHOLD_LOW 600
+
 #define KNOB_3 2
 #define KNOB_6 7
+#define MCP23017_INTA 1
+//users
+struct USERS_SETTINGS {
+    String name;
+    unsigned char mode;
+    unsigned int thicknessNormalMode;
+    unsigned int thicknessTrimmingMode;
+    unsigned int thresholdSuperieur;
+    unsigned int thresholdInferieur; 
+};
+struct HOME
+{
+  unsigned char counterValue;
+  unsigned int trimValue;
+  unsigned int feedValue;
+};
+struct MENU
+{
+  USERS_SETTINGS userStetting;
+  HOME home ;
+};
 
-
+/*=======prototype function=====================*/
 void SensRotation();
 void RemoveZero(unsigned int value, unsigned char colonne, unsigned char ligne);
 void ThresholdDetection(unsigned int value);
 unsigned int AverageAdc (unsigned int valAdc);
+void SaveThreshold();
+void HomeScreen();
+void ShowPot(unsigned char columns, unsigned char raw);
 
 // Boards declaration
 board_2004_01_V01 motor_2004_board;
 
 // Display declaration
-LiquidCrystal_I2C lcd(0x27,20,4);  // set the LCD address to 0x27 for a 16 chars and 2 line display
+LiquidCrystal_I2C lcd(0x27,20,4);  // set the LCD address to 0x27 for a 16 chars and 2 line display 
+
 
 //variable declaration 
 char btnGrbtgl;
+String myString;
 unsigned char counter;
 unsigned char lastState;
 unsigned char knob3;
 unsigned char knob6;
 unsigned int  valAdc;
 unsigned int  moyenne; 
-String myString;
+unsigned int thresholdHigh =900;
+unsigned int thresholdLow =600;
 
+
+
+USERS_SETTINGS userDefault ={"Default",0,60,100,150,800};
+HOME home = {0,0,0};
+MENU menu={userDefault,home};
+USERS_SETTINGS currentUser = userDefault;
 // Arduino setup
 void setup()
 {
   // Main board_2004 initialization
   motor_2004_board.begin();
-  
+   Serial.begin(9800);
   //pin Out config
   pinMode(BTN_GRBTGL,INPUT);
-  pinMode(ADC_POT, INPUT);
+
+  // pinMode(ADC_POT, INPUT);
   attachInterrupt(digitalPinToInterrupt(KNOB_3),SensRotation, FALLING);
+  attachInterrupt(digitalPinToInterrupt(KNOB_3),SensRotation, FALLING);
+  
   pinMode(KNOB_6, INPUT);
+  pinMode(8,OUTPUT);
   
   
   // initialize the lcd 
-  lcd.init();                      
-  lcd.home();
+  lcd.init();   
+  lcd.noDisplay();                   
+  lcd.display();
   lcd.clear();
   // Print a message to the LCD.
-  lcd.setCursor(1,0);
-  lcd.print("Hello, world!");
-  lcd.setCursor(1,1);
-  lcd.print("stage 2020");
-   lcd.setCursor(1,2);
-  lcd.print("Garcia");
-  lcd.setCursor(1,3);
-  lcd.print("neufo");
-
-  delay(1000);
-  
-  lcd.clear();
-  lcd.home();
-  delay(50);
-  lcd.print ("counter  = ");
-  lcd.setCursor (0,1);
-  lcd.print ("val pot = ");
+  //lcd.setCursor(1,0);
+  HomeScreen();
   
 }
 
@@ -94,93 +110,81 @@ void loop()
 {
 
  btnGrbtgl = digitalRead (BTN_GRBTGL);
-
- 
+ digitalWrite(8,HIGH);
+ delay(500);
+ digitalWrite(8,LOW);
+ delay(500);
  // compare the buttonState to its previous state
  if(!btnGrbtgl && btnGrbtgl != lastState)
  {  
-  counter++;
- // motor_2004_board.stepperRotation(MOTOR_A, 10*counter, 2);
+  //counter++;
+  // motor_2004_board.stepperRotation(MOTOR_A, 10*counter, 2);
+   SaveThreshold();
  }
  lastState = btnGrbtgl;
  myString =  String (counter);
-
- lcd.setCursor (11,0);
- lcd.print (counter);
-  RemoveZero(counter,11,0);
- 
- valAdc = analogRead(ADC_POT);
- valAdc = AverageAdc(valAdc);
- myString = String (valAdc);
+  valAdc = analogRead(ADC_POT);
  ThresholdDetection(valAdc);
  
- lcd.setCursor (11,1);
- lcd.print(myString);
- RemoveZero(valAdc,11,1);
+ 
 
          
-  delay(100);
+  delay(10);
 }
-/*------------------------------------------------------------------------------
-   AverageAdc()
-  ------------------------------------------------------------------------------
-   Descriptif: calcul une moyenne sur 5 des valeur du convertisseur analogique.
-   Entrée    : valeur ADC
-   Sortie    : --
-------------------------------------------------------------------------------*/
+
+/**
+ * @brief calculates an average over 5 values of the analog converter.
+ * @param valAdc ADC value
+ * @return unsigned int Avaraged ADC value
+ */
 unsigned int AverageAdc (unsigned int valAdc)
 {
-  unsigned long averageTempo;
-  static unsigned int cntLoop;
+  unsigned int averageTempo;
+  static unsigned int cntLoop=0;
   static unsigned int tabValAdc[5];
   unsigned int average;
-  if(cntLoop>=5)
-  {
-    cntLoop=0;
-  }
+  unsigned char i;
+  averageTempo=0;
   tabValAdc[cntLoop]=valAdc;
   cntLoop++;
-  for(int i=0;i<5;i++)
+  if(cntLoop>=5)
+  {    
+    cntLoop=0;
+  }
+
+  for( i=0;i<5;i++)
   {
+
     averageTempo += tabValAdc[i];
+
   }
   average = averageTempo/5;
   return average;
 }
-/*------------------------------------------------------------------------------
-   RemoveZero()
-  ------------------------------------------------------------------------------
-   Descriptif: supprime les zéros d'un nombre sur LCD lors que ces dernier
-   sont inutile.
-   Entrée    : valeur du nombre. 
-               numéro de colonne.
-               numéro de ligne.
-   Sortie    : --
-------------------------------------------------------------------------------*/
 
 /**
- * @brief  supprime les zéros d'un nombre sur LCD lors que ces dernier
+ * @brief  removes the remaining zeros from the display 
  * 
- * @param valeur du nombre
- * @param colonne 
- * @param ligne 
+ * @param value 
+ * @param column 
+ * @param raw 
  */
 
-void RemoveZero(unsigned int value, unsigned char colonne, unsigned char ligne)
+void RemoveZero(unsigned int value, unsigned char column, unsigned char raw)
 {
    if(value<999)
    {
-     lcd.setCursor (colonne+3,ligne);
+     lcd.setCursor (column+3,raw);
      lcd.print(" ");
    }
    if(value<99)
    {
-     lcd.setCursor (colonne+2,ligne);
+     lcd.setCursor (column+2,raw);
      lcd.print(" ");
    }
     if(value<10)
    {
-     lcd.setCursor (colonne+1,ligne);
+     lcd.setCursor (column+1,raw);
      lcd.print(" ");
    }
 }
@@ -192,10 +196,14 @@ void RemoveZero(unsigned int value, unsigned char colonne, unsigned char ligne)
    Entrée    : valeur du potentionmètre 
    Sortie    : --
 ------------------------------------------------------------------------------*/
+/**
+ * @brief Raises or lowers the platform depending on the position of the blade.
+ * @param value 
+ */
 void  ThresholdDetection(unsigned int value)
 {
   static unsigned char memo;
-  if(value>=THRESHOLD_HIGH )
+  if(value>=thresholdHigh )
   { 
     if(!memo)
     {
@@ -203,23 +211,22 @@ void  ThresholdDetection(unsigned int value)
       motor_2004_board.stepperRotation(MOTOR_A, 50, DEFAULT_MOTOR_STEPS);
     }
   }
-  else if(value<=THRESHOLD_LOW)
+  else if(value<=thresholdLow)
   {
     memo=0;
   }
 
 }
-/*------------------------------------------------------------------------------
-   sensRotation ()
-  ------------------------------------------------------------------------------
-   Descriptif: Interruption externe, détermine le sens de rotation de l'encodeur
-   Entrée    : --
-   Sortie    : --
-------------------------------------------------------------------------------*/
+/**
+ * @brief determines the direction of rotation of the encoder
+ * 
+ */
 void SensRotation()
 {
+  valAdc = analogRead(ADC_POT);
   knob3 = digitalRead (KNOB_3);
   knob6 = digitalRead (KNOB_6);
+  
   if(knob3 == knob6)
   {
     counter++;
@@ -229,15 +236,83 @@ void SensRotation()
     counter--;
   }
 }
-/*------------------------------------------------------------------------------
-   AverageAdc()
-  ------------------------------------------------------------------------------
-   Descriptif: calcul une moyenne sur 5 des valeur du convertisseur analogique.
-   Entrée    : valeur ADC
-   Sortie    : --
-------------------------------------------------------------------------------*/
-void FixedTextLcd ()
+/**
+ * @brief Records when the media goes up and down 
+ * 
+ */
+void SaveThreshold()
 {
-  
-  
+   lcd.clear();
+  lcd.setCursor (0,0);
+  lcd.print("threshol config");
+  lcd.setCursor (0,1);
+  lcd.print("threshol high = ");
+  lcd.setCursor (0,2);
+  lcd.print("threshol low = ");
+  btnGrbtgl = digitalRead (BTN_GRBTGL);
+  do 
+  {
+    btnGrbtgl = digitalRead (BTN_GRBTGL);
+  } while (!btnGrbtgl);
+
+  do 
+  {
+    btnGrbtgl = digitalRead (BTN_GRBTGL);
+    valAdc = analogRead(ADC_POT);
+    thresholdHigh = valAdc;
+    ShowPot(16,1);
+  }while (btnGrbtgl);
+ 
+  do 
+  {
+    btnGrbtgl = digitalRead (BTN_GRBTGL);
+  } while (!btnGrbtgl);
+  do 
+  {
+    btnGrbtgl = digitalRead (BTN_GRBTGL);
+    valAdc = analogRead(ADC_POT);
+    thresholdLow = valAdc;
+    ShowPot(16,2);
+  }while (btnGrbtgl);
+  lcd.clear();
+  lcd.home();
+  HomeScreen();
 }
+/**
+ * @brief home screen
+ * 
+ * 
+ */
+void HomeScreen()
+{
+ 
+  lcd.setCursor(1,1);
+  lcd.print("Feed=");
+  lcd.print(home.counterValue);
+  lcd.setCursor(1,3);
+  lcd.print("Counter=");
+  lcd.print(home.counterValue);
+  lcd.setCursor(13,1);
+  lcd.print("TRIM=");
+  lcd.print(home.trimValue);
+  lcd.setCursor(0,0);
+  lcd.print(userDefault.name);
+}
+
+/**
+ * @brief  read the value of the potentiometer and display it 
+ * 
+ * @param columns 
+ * @param raw 
+ */
+void ShowPot(unsigned char columns, unsigned char raw)
+{  
+  valAdc = analogRead(ADC_POT);
+  //calculates the average of the adc values
+  valAdc = AverageAdc(valAdc);
+  //convert to string 
+  myString = String (valAdc);
+  lcd.setCursor (columns,raw);
+  lcd.print(myString);
+  RemoveZero(valAdc,columns,raw);
+}  
