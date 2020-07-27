@@ -1,0 +1,150 @@
+\hypertarget{json_config_s_dcard_8cpp}{}\doxysection{src/json\+Config\+S\+Dcard.cpp File Reference}
+\label{json_config_s_dcard_8cpp}\index{src/jsonConfigSDcard.cpp@{src/jsonConfigSDcard.cpp}}
+{\ttfamily \#include \char`\"{}json\+Config\+S\+Dcard.\+h\char`\"{}}\newline
+{\ttfamily \#include $<$S\+P\+I.\+h$>$}\newline
+{\ttfamily \#include \char`\"{}Sd\+Fat.\+h\char`\"{}}\newline
+{\ttfamily \#include $<$Arduino\+Json.\+h$>$}\newline
+\doxysubsection*{Macros}
+\begin{DoxyCompactItemize}
+\item 
+\#define \mbox{\hyperlink{json_config_s_dcard_8cpp_a04d57a6c18b2d5e81f31093e58ed0c62}{S\+D\+\_\+\+C\+S\+\_\+\+P\+IN}}~S\+D\+C\+A\+R\+D\+\_\+\+S\+S\+\_\+\+P\+IN
+\item 
+\#define \mbox{\hyperlink{json_config_s_dcard_8cpp_a258bb72419ef143530a2f8f55e7d57af}{N\+O\+\_\+\+E\+R\+R\+OR}}~0
+\end{DoxyCompactItemize}
+\doxysubsection*{Functions}
+\begin{DoxyCompactItemize}
+\item 
+int \mbox{\hyperlink{json_config_s_dcard_8cpp_a51bbbd90e87877e7f188350e2fe58618}{load\+File\+From\+SD}} (char $\ast$file\+Name, char $\ast$destination\+Buffer)
+\begin{DoxyCompactList}\small\item\em load\+File\+From\+SD, Read the file specified from file\+Name and put them to the destination buffer \end{DoxyCompactList}\item 
+int \mbox{\hyperlink{json_config_s_dcard_8cpp_ab4d5fb05be5058c0ff18cf6fbed80625}{Save\+File\+To\+SD}} (char $\ast$file\+Name, char $\ast$source\+Buffer)
+\begin{DoxyCompactList}\small\item\em Save the buffer to file on SD card. \end{DoxyCompactList}\item 
+int \mbox{\hyperlink{json_config_s_dcard_8cpp_ae8b688f2fb7e743c9a989243f461c83d}{get\+User\+Settings\+From\+Config}} (char $\ast$file\+Name, \mbox{\hyperlink{json_config_s_dcard_8h_a7224efaead5294b661e3580dd3bc42cb}{S\+E\+T\+T\+I\+N\+GS}} $\ast$user\+Setting, int config\+Nb)
+\begin{DoxyCompactList}\small\item\em Get the User Settings From Config file on the SD card. \end{DoxyCompactList}\item 
+int \mbox{\hyperlink{json_config_s_dcard_8cpp_af80921cf7622c1063d7942e8a791531e}{get\+General\+Slicer\+Config}} (char $\ast$file\+Name, \mbox{\hyperlink{json_config_s_dcard_8h_af797b9e1880fc534058b1d6ea7d571d2}{S\+L\+I\+C\+E\+R\+C\+O\+N\+F\+IG}} $\ast$\mbox{\hyperlink{main_8cpp_ab793395a528518841553df2ee8e97411}{machine\+Config}})
+\begin{DoxyCompactList}\small\item\em Get the General Slicer Config object. \end{DoxyCompactList}\item 
+int \mbox{\hyperlink{json_config_s_dcard_8cpp_a9cfc33de18c357ce20e675c5a1e1473c}{save\+User\+And\+General\+Settings}} (char $\ast$file\+Name, \mbox{\hyperlink{json_config_s_dcard_8h_af797b9e1880fc534058b1d6ea7d571d2}{S\+L\+I\+C\+E\+R\+C\+O\+N\+F\+IG}} $\ast$\mbox{\hyperlink{main_8cpp_ab793395a528518841553df2ee8e97411}{machine\+Config}}, \mbox{\hyperlink{json_config_s_dcard_8h_a7224efaead5294b661e3580dd3bc42cb}{S\+E\+T\+T\+I\+N\+GS}} $\ast$\mbox{\hyperlink{main_8cpp_abf51ce16e9e56d7a97652a45fdad0111}{user\+Config}}, unsigned char nb\+Of\+User\+Config)
+\begin{DoxyCompactList}\small\item\em Save as file on SD card the general setting and the users settings. \end{DoxyCompactList}\end{DoxyCompactItemize}
+
+
+\doxysubsection{Macro Definition Documentation}
+\mbox{\Hypertarget{json_config_s_dcard_8cpp_a258bb72419ef143530a2f8f55e7d57af}\label{json_config_s_dcard_8cpp_a258bb72419ef143530a2f8f55e7d57af}} 
+\index{jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}!NO\_ERROR@{NO\_ERROR}}
+\index{NO\_ERROR@{NO\_ERROR}!jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}}
+\doxysubsubsection{\texorpdfstring{NO\_ERROR}{NO\_ERROR}}
+{\footnotesize\ttfamily \#define N\+O\+\_\+\+E\+R\+R\+OR~0}
+
+\mbox{\Hypertarget{json_config_s_dcard_8cpp_a04d57a6c18b2d5e81f31093e58ed0c62}\label{json_config_s_dcard_8cpp_a04d57a6c18b2d5e81f31093e58ed0c62}} 
+\index{jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}!SD\_CS\_PIN@{SD\_CS\_PIN}}
+\index{SD\_CS\_PIN@{SD\_CS\_PIN}!jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}}
+\doxysubsubsection{\texorpdfstring{SD\_CS\_PIN}{SD\_CS\_PIN}}
+{\footnotesize\ttfamily \#define S\+D\+\_\+\+C\+S\+\_\+\+P\+IN~S\+D\+C\+A\+R\+D\+\_\+\+S\+S\+\_\+\+P\+IN}
+
+
+
+\doxysubsection{Function Documentation}
+\mbox{\Hypertarget{json_config_s_dcard_8cpp_af80921cf7622c1063d7942e8a791531e}\label{json_config_s_dcard_8cpp_af80921cf7622c1063d7942e8a791531e}} 
+\index{jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}!getGeneralSlicerConfig@{getGeneralSlicerConfig}}
+\index{getGeneralSlicerConfig@{getGeneralSlicerConfig}!jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}}
+\doxysubsubsection{\texorpdfstring{getGeneralSlicerConfig()}{getGeneralSlicerConfig()}}
+{\footnotesize\ttfamily int get\+General\+Slicer\+Config (\begin{DoxyParamCaption}\item[{char $\ast$}]{file\+Name,  }\item[{\mbox{\hyperlink{json_config_s_dcard_8h_af797b9e1880fc534058b1d6ea7d571d2}{S\+L\+I\+C\+E\+R\+C\+O\+N\+F\+IG}} $\ast$}]{machine\+Config }\end{DoxyParamCaption})}
+
+
+
+Get the General Slicer Config object. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em file\+Name} & file\+Name on the SD card \\
+\hline
+{\em machine\+Config} & pointer to the machine config structure \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+int 
+\end{DoxyReturn}
+\mbox{\Hypertarget{json_config_s_dcard_8cpp_ae8b688f2fb7e743c9a989243f461c83d}\label{json_config_s_dcard_8cpp_ae8b688f2fb7e743c9a989243f461c83d}} 
+\index{jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}!getUserSettingsFromConfig@{getUserSettingsFromConfig}}
+\index{getUserSettingsFromConfig@{getUserSettingsFromConfig}!jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}}
+\doxysubsubsection{\texorpdfstring{getUserSettingsFromConfig()}{getUserSettingsFromConfig()}}
+{\footnotesize\ttfamily int get\+User\+Settings\+From\+Config (\begin{DoxyParamCaption}\item[{char $\ast$}]{file\+Name,  }\item[{\mbox{\hyperlink{json_config_s_dcard_8h_a7224efaead5294b661e3580dd3bc42cb}{S\+E\+T\+T\+I\+N\+GS}} $\ast$}]{user\+Setting,  }\item[{int}]{config\+Nb }\end{DoxyParamCaption})}
+
+
+
+Get the User Settings From Config file on the SD card. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em file\+Name} & file\+Name on the SD card \\
+\hline
+{\em user\+Setting} & pointer to the users settings structure \\
+\hline
+{\em config\+Nb} & User setting number to read \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+int error code 
+\end{DoxyReturn}
+\mbox{\Hypertarget{json_config_s_dcard_8cpp_a51bbbd90e87877e7f188350e2fe58618}\label{json_config_s_dcard_8cpp_a51bbbd90e87877e7f188350e2fe58618}} 
+\index{jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}!loadFileFromSD@{loadFileFromSD}}
+\index{loadFileFromSD@{loadFileFromSD}!jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}}
+\doxysubsubsection{\texorpdfstring{loadFileFromSD()}{loadFileFromSD()}}
+{\footnotesize\ttfamily int load\+File\+From\+SD (\begin{DoxyParamCaption}\item[{char $\ast$}]{file\+Name,  }\item[{char $\ast$}]{destination\+Buffer }\end{DoxyParamCaption})}
+
+
+
+load\+File\+From\+SD, Read the file specified from file\+Name and put them to the destination buffer 
+
+
+\begin{DoxyParams}{Parameters}
+{\em file\+Name} & pointer to the file name to open \\
+\hline
+{\em destination\+Buffer} & pointer to the destination buffer for get file data \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+int code error 
+\end{DoxyReturn}
+\mbox{\Hypertarget{json_config_s_dcard_8cpp_ab4d5fb05be5058c0ff18cf6fbed80625}\label{json_config_s_dcard_8cpp_ab4d5fb05be5058c0ff18cf6fbed80625}} 
+\index{jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}!SaveFileToSD@{SaveFileToSD}}
+\index{SaveFileToSD@{SaveFileToSD}!jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}}
+\doxysubsubsection{\texorpdfstring{SaveFileToSD()}{SaveFileToSD()}}
+{\footnotesize\ttfamily int Save\+File\+To\+SD (\begin{DoxyParamCaption}\item[{char $\ast$}]{file\+Name,  }\item[{char $\ast$}]{source\+Buffer }\end{DoxyParamCaption})}
+
+
+
+Save the buffer to file on SD card. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em file\+Name} & pointer to apply \\
+\hline
+{\em source\+Buffer} & pointer to write in file \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+int 
+\end{DoxyReturn}
+\mbox{\Hypertarget{json_config_s_dcard_8cpp_a9cfc33de18c357ce20e675c5a1e1473c}\label{json_config_s_dcard_8cpp_a9cfc33de18c357ce20e675c5a1e1473c}} 
+\index{jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}!saveUserAndGeneralSettings@{saveUserAndGeneralSettings}}
+\index{saveUserAndGeneralSettings@{saveUserAndGeneralSettings}!jsonConfigSDcard.cpp@{jsonConfigSDcard.cpp}}
+\doxysubsubsection{\texorpdfstring{saveUserAndGeneralSettings()}{saveUserAndGeneralSettings()}}
+{\footnotesize\ttfamily int save\+User\+And\+General\+Settings (\begin{DoxyParamCaption}\item[{char $\ast$}]{file\+Name,  }\item[{\mbox{\hyperlink{json_config_s_dcard_8h_af797b9e1880fc534058b1d6ea7d571d2}{S\+L\+I\+C\+E\+R\+C\+O\+N\+F\+IG}} $\ast$}]{machine\+Config,  }\item[{\mbox{\hyperlink{json_config_s_dcard_8h_a7224efaead5294b661e3580dd3bc42cb}{S\+E\+T\+T\+I\+N\+GS}} $\ast$}]{user\+Config,  }\item[{unsigned char}]{nb\+Of\+User\+Config }\end{DoxyParamCaption})}
+
+
+
+Save as file on SD card the general setting and the users settings. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em file\+Name} & to save \\
+\hline
+{\em machine\+Config} & pointer to machine\+Config structure \\
+\hline
+{\em user\+Config} & pointer to users settings structure \\
+\hline
+{\em nb\+Of\+User\+Config} & number of users settings to save \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+int error code 
+\end{DoxyReturn}
