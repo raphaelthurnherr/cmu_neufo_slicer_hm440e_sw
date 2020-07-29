@@ -1,17 +1,26 @@
 #include <Arduino.h>
-
-
 #include "cmu_ws_2004_01_V1_board.h"
 #include <Wire.h> 
 #include "LiquidCrystal_I2C.h"
+#include <jsonConfigSDcard.h>
+#include "SdFat.h"
+
 
 
 // Define the default motor speed and steps for run from BNC trigger
 #define DEFAULT_MOTOR_SPEED 100
 #define DEFAULT_MOTOR_STEPS 200
 
-
-
+//config 
+#define NORMAL_MODE 0
+#define TRIMMING_MODE 1
+#define ALARM_OFF 0
+#define ALARM_ON 1
+//DEFAULT
+#define DEFAULT_THICKNESS_NORMAL_MODE 100
+#define DEFAULT_THICKNESS_TRIM_MODE 150
+#define DEFAULT_THRESHOLD_HIGH 800
+#define DEFAULT_THRESHOLD_LOW 150
 
 //  Frame slots for commands
 #define BTN_GRBTGL 6
@@ -21,14 +30,17 @@
 #define KNOB_6 7
 #define MCP23017_INTA 1
 //users
-struct USERS_SETTINGS {
-    String name;
-    unsigned char mode;
-    unsigned int thicknessNormalMode;
-    unsigned int thicknessTrimmingMode;
-    unsigned int thresholdSuperieur;
-    unsigned int thresholdInferieur; 
-};
+// number of maximum users settings allocated
+#define MAX_USER_SETTINGS 6
+
+
+// Create new variable for user config storage
+SETTINGS userConfig[MAX_USER_SETTINGS];
+SLICERCONFIG machineConfig;
+
+
+
+
 struct HOME
 {
   unsigned char counterValue;
@@ -37,7 +49,6 @@ struct HOME
 };
 struct MENU
 {
-  USERS_SETTINGS userStetting;
   HOME home ;
 };
 
@@ -71,16 +82,49 @@ unsigned int thresholdLow =600;
 
 
 
-USERS_SETTINGS userDefault ={"Default",0,60,100,150,800};
 HOME home = {0,0,0};
-MENU menu={userDefault,home};
-USERS_SETTINGS currentUser = userDefault;
+MENU menu;
 // Arduino setup
 void setup()
 {
   // Main board_2004 initialization
-  motor_2004_board.begin();
-   Serial.begin(9800);
+ 
+  
+  
+
+  // Print a message to the LCD.
+  //lcd.setCursor(1,0);
+  
+  Serial.begin(9600);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+
+  int i;
+  int error=0;
+
+  // Get the data config for each user
+  for(i=0;i<MAX_USER_SETTINGS;i++){
+    error+= getUserSettingsFromConfig("config.cfg", &userConfig[i], i);
+  }
+
+  // Get the slicer general configuration
+  if(error == 0){
+    getGeneralSlicerConfig("config.cfg", &machineConfig);
+    Serial.write("Users settings loaded !");
+
+  userConfig[0].thresholdToCut=1000;
+
+  // Try to save general machine config and users settings as file if no error (>=0)
+  if(saveUserAndGeneralSettings("test.cfg", &machineConfig, userConfig, MAX_USER_SETTINGS) >= 0)
+    Serial.write("Saving file done !");
+  else Serial.write("Saving file ERROR !");
+
+
+  }else Serial.write("ERROR during setting loading !");
+
+ // motor_2004_board.begin();
+  /*
   //pin Out config
   pinMode(BTN_GRBTGL,INPUT);
 
@@ -90,17 +134,14 @@ void setup()
   
   pinMode(KNOB_6, INPUT);
   pinMode(8,OUTPUT);
-  
-  
   // initialize the lcd 
-  lcd.init();   
-  lcd.noDisplay();                   
-  lcd.display();
-  lcd.clear();
-  // Print a message to the LCD.
-  //lcd.setCursor(1,0);
-  HomeScreen();
-  
+ // lcd.init();   
+ // lcd.noDisplay();                   
+ // lcd.display();
+ //lcd.clear();
+ */
+
+  //HomeScreen();
 }
 
 
@@ -109,25 +150,25 @@ void setup()
 void loop() 
 {
 
- btnGrbtgl = digitalRead (BTN_GRBTGL);
- digitalWrite(8,HIGH);
- delay(500);
- digitalWrite(8,LOW);
- delay(500);
+ //btnGrbtgl = digitalRead (BTN_GRBTGL);
+ //digitalWrite(8,HIGH);
+ //delay(500);
+ ///digitalWrite(8,LOW);
+ //delay(500);
  // compare the buttonState to its previous state
- if(!btnGrbtgl && btnGrbtgl != lastState)
- {  
+ //if(!btnGrbtgl && btnGrbtgl != lastState)
+ //{  
   //counter++;
   // motor_2004_board.stepperRotation(MOTOR_A, 10*counter, 2);
-   SaveThreshold();
- }
- lastState = btnGrbtgl;
- myString =  String (counter);
-  valAdc = analogRead(ADC_POT);
- ThresholdDetection(valAdc);
+ //  SaveThreshold();
+ //}
+ //lastState = btnGrbtgl;
+ //myString =  String (counter);
+// valAdc = analogRead(ADC_POT);
+ //ThresholdDetection(valAdc);
  
  
-
+//motor_2004_board.stepperRotation(MOTOR_A, 80, 5);
          
   delay(10);
 }
@@ -283,7 +324,7 @@ void SaveThreshold()
  * 
  * 
  */
-void HomeScreen()
+void HomeScreen( )
 {
  
   lcd.setCursor(1,1);
@@ -296,7 +337,7 @@ void HomeScreen()
   lcd.print("TRIM=");
   lcd.print(home.trimValue);
   lcd.setCursor(0,0);
-  lcd.print(userDefault.name);
+  lcd.print(" ");
 }
 
 /**
