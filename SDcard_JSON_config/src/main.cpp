@@ -13,11 +13,14 @@
  * 
  */
 #include <Arduino.h>
+#include <delay.h>
 #include "cmu_ws_2004_01_V1_board.h"
 #include <Wire.h> 
 #include "LiquidCrystal_I2C.h"
 #include <jsonConfigSDcard.h>
 #include <SdFat.h>
+
+
 
 
 
@@ -58,8 +61,11 @@
 #define CW -1
 #define CCW 1
 #define NO_ROTATION 0
-#define PUSH 1
+#define LONG_PUSH -1
 #define NO_PUSH 0
+#define PUSH 1
+#define LONG_PUSH_TIME 1000
+#define BOUNCE_ELIM_TIME 10
 
 //POT
 #define AVERAGE_SIZE 5
@@ -77,8 +83,10 @@
 #define MENU_THICKNESS 1
 #define MENU_THRESHOLD 2
 #define MENU_ALARM 3
-#define EXIT -1
+#define EXIT 1
 
+// LCD 
+#define MAX_ROW_INDEX_LCD 3
 // Boards declaration
 board_2004_01_V01 motor_2004_board; 
     
@@ -95,10 +103,11 @@ struct HOME
   unsigned int trimValue;
   unsigned int feedValue;
 };
-
+typedef void (*IndexMenu)(void);
 struct MENU
 {
   HOME home;
+  IndexMenu indexArrow;
 };
 
 /*=======prototype function=====================*/
@@ -107,12 +116,12 @@ void MenuAlarm();
 void MenuThresholdToCut();
 void ScreenThreshold();
 void MenuThreshold();
-void MenuThresholdToCut();
+void MenuThresholdToRewind();
 void ScreenThreshold();
 void MenuThreshold();
 void MenuThickness( );
 void MenuMode();
-void ArrowIndex();
+void ArrowIndex(bool force);
 void MenuSelection();
 void MenuSelecScreenOne();
 void MenuSelecScreenTwo();
@@ -125,6 +134,7 @@ void SaveThreshold();
 void HomeScreen();
 void ShowPot(unsigned char columns, unsigned char raw);
 void PortInit();
+void lcdClear();
 
 
 
@@ -144,15 +154,16 @@ unsigned int thresholdHigh =900;
 unsigned int thresholdLow =600;
 bool swEncodeur;
 int currentUser;
-int arrowIndexRow=0;
-int arrowOldPosition=3;
+int arrowIndexRow=1;
+int arrowOldPosition=MAX_ROW_INDEX_LCD;
 bool flagUpperMenu;
 bool flagLowerMenu;
+int menuNumber =0;
 byte retarrow[8] = {	0x10,0x10,0x14,0x16,0x1f,0x06,0x04};
 
 HOME home = {0,0,0};
 MENU menu;
- 
+
 
 // Arduino setup
 
@@ -176,7 +187,7 @@ void setup() {
   lcd.begin(20,4);
   lcd.noDisplay();          
   lcd.display();
-  lcd.clear();
+  lcdClear();
 
    HomeScreen();
   //currentUser = userConfig[2];
@@ -189,17 +200,76 @@ void setup() {
 
 void loop() {
   swEncodeur = digitalRead (KNOB_SWITCH_A);
-  ArrowIndex();
- // lastState = swEncodeur;
- // compare the buttonState to its previous state
-
-
- //valAdc = analogRead(ADC_POT);
- //ThresholdDetection(valAdc);
- MenuSelection();
-
-   
- //MenuMode(&currentUser); 
+  Serial.begin(9600);
+  if (knobPsuh == LONG_PUSH)
+  {
+    knobPsuh = NO_PUSH;
+    arrowIndexRow=1;
+    MenuSelection();
+    ArrowIndex(1);
+    
+    do
+    {
+      ArrowIndex(0);
+      if(flagLowerMenu || flagUpperMenu)
+      {
+        menuNumber = !menuNumber;
+        MenuSelection();
+        
+      }
+      
+      if(knobPsuh == PUSH)
+      {
+        knobPsuh = NO_PUSH;
+        if(!menuNumber)
+        {
+          switch (arrowIndexRow)
+          {
+            case 1:
+            MenuMode();
+            break;
+            case 2: 
+            MenuThickness();
+            break;
+            case 3:
+            MenuThreshold();
+            break;
+            default :
+            MenuSelecScreenOne();
+            break;
+          }
+        }
+        else 
+        {
+          switch (arrowIndexRow)
+          {
+            case 1:
+            MenuThickness();
+            break;
+            case 2:
+            MenuThreshold();
+            break;
+            case 3:
+            MenuAlarm();
+            break;
+            default:
+            MenuSelecScreenTwo();
+            break;
+          }
+        }
+        MenuSelection();
+        knobPsuh = NO_PUSH;
+      }
+      
+    }while(knobPsuh != LONG_PUSH);
+    knobPsuh = NO_PUSH;
+  }
+  else
+  {
+    HomeScreen();
+  }
+  
+  
  //motor_2004_board.stepperRotation(MOTOR_A, 80, 10);
   delay(100);
 }
@@ -280,36 +350,7 @@ void  ThresholdDetection(unsigned int value)
 
 }
 
-/**
- * @brief determines the direction of knobRotation of the encoder
- * 
- */
-void knobRotationDetection()
-{
-  bool knobChannelA;
-  bool knobChannelB;
-  
-  knobChannelA = digitalRead (KNOB_CHANNEL_A);
-  knobChannelB = digitalRead (KNOB_CHANNEL_B);
- 
-  if(knobChannelA == knobChannelB)
-  {
-    
-    
-     knobRotation = CW;
-  }
-  else
-  {
-   
-    knobRotation = CCW;
-  }
-}
 
-void knobSwitchDetection()
-{
-  
-  knobPsuh = PUSH;
-}
 
 
 
@@ -319,8 +360,7 @@ void knobSwitchDetection()
  */
 void SaveThreshold()
 {
-  
-  lcd.clear();
+  lcdClear();
   lcd.setCursor (0,0);
   lcd.print("threshol config");
   lcd.setCursor (0,1);
@@ -331,7 +371,7 @@ void SaveThreshold()
   //stores the user's threshold to cut value
   do 
   {
-    swEncodeur = digitalRead (KNOB_SWITCH_A);
+   // swEncodeur = digitalRead (KNOB_SWITCH_A);
     valAdc = analogRead(ADC_POT);
     userConfig[currentUser].thresholdToCut = valAdc;
     ShowPot(16,1);
@@ -341,12 +381,15 @@ void SaveThreshold()
   //stores the user's threshold to rewind cut value
   do 
   {
-    swEncodeur = digitalRead (KNOB_SWITCH_A);
+    //swEncodeur = digitalRead (KNOB_SWITCH_A);
     valAdc = analogRead(ADC_POT);
     userConfig[currentUser].thresholdToRewind = valAdc;
     ShowPot(16,2);
-  }while (knobPsuh==NO_PUSH);
-
+  }while (knobPsuh != LONG_PUSH);
+  /*
+  do{
+    delay(10);
+  }while(knobPsuh != LONG_PUSH);*/
   //back to home screen
   HomeScreen();
 }
@@ -357,11 +400,18 @@ void SaveThreshold()
  */
 void HomeScreen( )
 {
-  lcd.home();
-  lcd.clear();
+ static bool firstLoop=false;
+ static unsigned int memoCntValue;
+ static unsigned int memoFeedValue;
+ static unsigned int memoTrimValue;
+
+ if(!firstLoop)
+ {
+   firstLoop = true;
+  lcdClear();
   lcd.setCursor(0,0);
   lcd.print("Feed=");
-  lcd.print(home.counterValue);
+  lcd.print(home.feedValue);
   lcd.setCursor(5,3);
   lcd.print("Counter=");
   lcd.print(home.counterValue);
@@ -370,75 +420,36 @@ void HomeScreen( )
   lcd.print(home.trimValue);
   lcd.setCursor(5,0);
   lcd.print(userConfig[currentUser].name);
+ }
+ if(memoCntValue != home.counterValue)
+ {firstLoop=false;}
+ if(memoFeedValue != home.feedValue)
+ {firstLoop=false;}
+ if(memoTrimValue != home.trimValue)
+ {firstLoop=false;}
+ memoCntValue = home.counterValue;
+ memoFeedValue = home.feedValue;
+ memoTrimValue = home.trimValue;
+
 }
 /**
  * @brief moves the cursor on display 
  * 
  * @return int 
  */
-void ArrowIndex()
-{
-  flagUpperMenu=false;
-    flagLowerMenu=false;
-  if(knobRotation!=NO_ROTATION)
-  {
-    
-    Serial.begin(9600);
-    if(knobRotation==CW)
-    {
-      
-      
-      arrowIndexRow ++;
-      
-    }
-    else if(knobRotation==CCW)
-    {
-      
-     
-      arrowIndexRow --;
-    }
-    if(arrowIndexRow<0)
-    {
-      arrowIndexRow=3;
-    }
-    else if (arrowIndexRow>3)
-    {
-      arrowIndexRow=0;
-    }
-    if(arrowOldPosition==3 && arrowIndexRow==0 )
-    {
-      flagUpperMenu=false;
-      flagLowerMenu=true;
-    }
-    else if (arrowOldPosition==0 && arrowIndexRow==3)
-    {
-      flagUpperMenu=true;
-      flagLowerMenu=false;
-    }
-    Serial.print(flagLowerMenu);
-    Serial.print(flagUpperMenu);
-    lcd.setCursor(0,arrowIndexRow);
-    lcd.write((byte)0);
-    lcd.setCursor(0,arrowOldPosition);
-    lcd.print(" ");
-    knobRotation=NO_ROTATION;
-    arrowOldPosition=arrowIndexRow;
-  }
- 
-}
+
 void MenuSelection()
 {
-  static bool firstLoop=false;
+ // static bool firstLoop=false;
   static bool flagScreenTwo=false;
    
-   if(flagUpperMenu ||  flagLowerMenu)
+  if(flagUpperMenu ||  flagLowerMenu)
   {
-    firstLoop=false;
+    //firstLoop=false;
     flagScreenTwo= !flagScreenTwo;
   }
-  if(!firstLoop)
-  {   
-    firstLoop=true;
+    
+    //firstLoop=true;
     if(!flagScreenTwo)
     {
       MenuSelecScreenOne();
@@ -447,18 +458,21 @@ void MenuSelection()
     {
       MenuSelecScreenTwo();
     }
-            
-  }
- //MenuSelecScreenTwo();
-
-   if(!swEncodeur && swEncodeur != lastState )
- {  
- }
- lastState = swEncodeur;
+    Serial.print("A");
+        Serial.print('\n');
+        Serial.print('\r');
+        Serial.print(flagLowerMenu);
+        Serial.print('\n');
+        Serial.print('\r');
+        Serial.print(flagUpperMenu);
+        Serial.print('\n');
+        Serial.print('\r');
+    ArrowIndex(1);        
+  
 }
 void MenuSelecScreenOne()
 {
-    lcd.clear();
+    lcdClear();
     lcd.home();
     lcd.setCursor(1,0);
     lcd.print("----user setting---");
@@ -466,13 +480,13 @@ void MenuSelecScreenOne()
     lcd.print("Mode = ");
     if(userConfig[currentUser].mode==MODE_NORMAL)
     {
-      myString = "Normal";
+      lcd.print("NORMAL");
     }
     else
     {
-      myString = "Trimming";
+       lcd.print("TRIMMING");
     }
-    lcd.print(myString);
+    
     lcd.setCursor(1,2);
     lcd.print("Thickness");
     lcd.setCursor(1,3);
@@ -480,8 +494,7 @@ void MenuSelecScreenOne()
 }
 void MenuSelecScreenTwo()
 {
-    lcd.clear();
-    lcd.home();
+    lcdClear();
     lcd.setCursor(1,0);
     lcd.print("----user setting---");
     lcd.setCursor(1,1);
@@ -509,12 +522,16 @@ void MenuSelecScreenTwo()
  */
 void MenuMode()
 {
+  static bool toggle = true;
+  lcdClear();
+  //lcd.home();
   
   lcd.setCursor(0,0);
-  lcd.print("--------Mode--------");
-  lcd.setCursor(1,1);
+  lcd.print("--------Mode------");
+  lcd.setCursor(1,2);
   lcd.print("Mode : ");
-  if(0 == NORMAL_MODE)
+  lcd.setCursor(8,2);
+  if(userConfig[currentUser].mode == NORMAL_MODE)
   {
     lcd.print("Normal");
   }
@@ -522,8 +539,30 @@ void MenuMode()
   {
     lcd.print("Triming");
   }
-  lcd.setCursor(3,1);
-  lcd.print("Exit");
+ 
+  do{
+  //activates or deactivates the temperature alarm 
+    if(knobRotation != NO_ROTATION)
+    {
+      knobRotation = NO_ROTATION;
+      toggle = !toggle;
+      //changes without taking into account the direction 
+      //of rotation of the encoder. 
+      if(toggle)
+      {
+        myString = "Normal  ";
+        userConfig[currentUser].mode = MODE_NORMAL;
+      }
+      else 
+      {     
+        myString = "Triming";
+        userConfig[currentUser].mode = MODE_TRIMMING;
+      }
+      lcd.setCursor(8,2);
+      lcd.print(myString);
+    }
+  }while (knobPsuh != LONG_PUSH);
+
 }
 
 /**
@@ -532,7 +571,7 @@ void MenuMode()
  */
 void MenuThickness( )
 {
-  
+  Serial.begin(9600);
   lcd.setCursor(0,0);
   lcd.print("-----Thickness-----");
 
@@ -550,67 +589,115 @@ void MenuThickness( )
 
 void MenuThreshold()
 {
+  lcdClear();
+  /*
+  lcd.setCursor(0,1);
+  lcd.write((byte)0);
+  */
+  arrowIndexRow=1;
+  ArrowIndex(1);
   lcd.setCursor(0,0);
   lcd.print("-----Threshold-----");
 
   lcd.setCursor(1,1);
   lcd.print("Threshold to cut");
 
-  lcd.setCursor(2,1);
+  lcd.setCursor(1,2);
   lcd.print("Threshold to revwind ");
 
-  lcd.setCursor(3,1);
-  lcd.print("Exit");
+  do
+  {
+      ArrowIndex(0);
+     if(knobPsuh == PUSH)
+     {
+       knobPsuh=NO_PUSH;
+       switch (arrowIndexRow)
+       {
+          case 1 :
+          ScreenThreshold();
+          MenuThresholdToCut();
+         // arrowIndexRow=1;
+          break;
+          case 2 : 
+          ScreenThreshold();
+          MenuThresholdToRewind();
+         // arrowIndexRow=2;
+          break;
+          default:
+          break;
+       }
+      lcdClear();
+      lcd.setCursor(0,arrowIndexRow);
+      lcd.write((byte)0);
+      lcd.setCursor(0,0);
+      lcd.print("-----Threshold------");
+
+      lcd.setCursor(1,1);
+      lcd.print("Threshold to cut");
+
+      lcd.setCursor(1,2);
+      lcd.print("Threshold to revwind ");
+     }
+  }while (knobPsuh != LONG_PUSH);
+  
+  
 }
 void ScreenThreshold()
 {
+  lcdClear();
   lcd.setCursor(0,1);
   lcd.print("place the blade and");
-  lcd.setCursor(1,1);
+  lcd.setCursor(0,2);
   lcd.print("Press validation");
-  lcd.setCursor(2,1);
+  lcd.setCursor(0,3);
   lcd.print("button");
+  do
+  {
+    delay(10);    
+  }while(knobPsuh != PUSH);
+  knobPsuh=NO_PUSH;
 }
 void MenuThresholdToCut()
 {
+  lcdClear();
+  lcd.setCursor(0,1);
+  lcd.write((byte)0);
   lcd.setCursor(0,0);
   lcd.print("--Threshold to cut--");
   lcd.setCursor(1,1);
-  lcd.print("Position = XXXX");
-  lcd.setCursor(3,1);
-  lcd.print("Exit");
+  lcd.print("Position = ");
   knobPsuh=NO_PUSH;
   //stores the user's threshold to cut value
   do 
   {
-    swEncodeur = digitalRead (KNOB_SWITCH_A);
     valAdc = analogRead(ADC_POT);
     userConfig[currentUser].thresholdToCut = valAdc;
-    ShowPot(16,1);
-  }while (knobPsuh==NO_PUSH);
-
+    ShowPot(12,1);
+  }while (knobPsuh!=LONG_PUSH);
+  knobPsuh = NO_PUSH;
   //back to home screen
-  HomeScreen();   
+ // HomeScreen();   
 }
 void MenuThresholdToRewind()
 {
+  lcdClear();
+  lcd.setCursor(0,1);
+    lcd.write((byte)0);
   lcd.setCursor(0,0);
-  lcd.print("-Threshold to rewind-");
+  lcd.print(" Threshold to rewind");
   lcd.setCursor(1,1);
-  lcd.print("Position = XXXX");
-  lcd.setCursor(3,1);
-  lcd.print("Exit");
+  lcd.print("Position = ");
   knobPsuh=NO_PUSH;
   do 
   {
     swEncodeur = digitalRead (KNOB_SWITCH_A);
     valAdc = analogRead(ADC_POT);
     userConfig[currentUser].thresholdToRewind = valAdc;
-    ShowPot(16,2);
-  }while (knobPsuh==NO_PUSH);
-
+    ShowPot(12,1);
+  }while (knobPsuh!=LONG_PUSH);
+  knobPsuh=NO_PUSH;
   //back to home screen
-  HomeScreen();
+ // HomeScreen();
 
 }
 /**
@@ -619,20 +706,20 @@ void MenuThresholdToRewind()
  */
 void MenuAlarm()
 {
-  static bool firstLoop = false;
   static bool toggle = true;
+  knobPsuh=NO_PUSH;
   //displays fixed text 
-  if(!firstLoop)
-  {
-    firstLoop=true;
-    lcd.clear();
-    lcd.home();
+ 
+   
+    lcdClear();
+    lcd.setCursor(0,2);
+    lcd.write((byte)0);
     lcd.setCursor(0,0);
     lcd.print("-------Alarm--------");
     lcd.setCursor(1,2);
     lcd.print("Alarm =");
     lcd.setCursor(9,2);
-    //lcd.print(userConfig[currentUser].alarm);
+  
     
     if(userConfig[currentUser].alarm)
     {
@@ -642,29 +729,149 @@ void MenuAlarm()
     {
       lcd.print("OFF");
     }
-     
-  }
+  
+  do{
   //activates or deactivates the temperature alarm 
-  if(knobRotation != NO_ROTATION)
-  {
-    knobRotation = NO_ROTATION;
-    toggle = !toggle;
-    //changes without taking into account the direction 
-    //of rotation of the encoder. 
-    if(toggle)
+    if(knobRotation != NO_ROTATION)
     {
-      myString = "ON ";
-      userConfig[currentUser].alarm = ALARM_ON;
+      knobRotation = NO_ROTATION;
+      toggle = !toggle;
+      //changes without taking into account the direction 
+      //of rotation of the encoder. 
+      if(toggle)
+      {
+        myString = "ON ";
+        userConfig[currentUser].alarm = ALARM_ON;
+      }
+      else 
+      {     
+        myString = "OFF";
+        userConfig[currentUser].alarm = Alarm_OFF;
+      }
+      lcd.setCursor(9,2);
+      lcd.print(myString);
     }
-    else 
-    {     
-      myString = "OFF";
-       userConfig[currentUser].alarm = Alarm_OFF;
-    }
-    
+  }while (knobPsuh != LONG_PUSH);
+ 
+}
+/**
+ * @brief determines the direction of rotation 
+ *        of the rotary encoder 
+ */
+void knobRotationDetection()
+{
+  bool knobChannelA;
+  bool knobChannelB;
+  //input reading 
+  knobChannelA = digitalRead (KNOB_CHANNEL_A);
+  knobChannelB = digitalRead (KNOB_CHANNEL_B); 
+  //Clock wise 
+  if(knobChannelA == knobChannelB)
+  {   knobRotation = CW;}
+  //contrary clock wise 
+  else
+  { knobRotation = CCW;}
+}
+/**
+ * @brief Detects whether the button has been 
+ *        pressed for a short or long time
+ */
+void knobSwitchDetection()
+{
+
+  static bool edgeMemo=0;
+  unsigned long timer;
+  static unsigned long timerMemo;
+  //reverses the interruption edge
+  edgeMemo =!edgeMemo;
+
+  timer = millis();
+  //button press 
+  if(edgeMemo)
+  {
+    attachInterrupt(digitalPinToInterrupt(KNOB_SWITCH_A),knobSwitchDetection, RISING);
+    //saves the time "t" at which the button was pressed 
+     timerMemo=timer;  
   }
-  lcd.setCursor(9,2);
-  lcd.print(myString); 
+  //Button release
+  else 
+  {
+     attachInterrupt(digitalPinToInterrupt(KNOB_SWITCH_A),knobSwitchDetection, FALLING);
+      //test if the button has been pressed long enough
+      if((timer-timerMemo) > LONG_PUSH_TIME)
+      {
+          knobPsuh = LONG_PUSH;
+      }
+      //bounce eliminator
+      else if((timer-timerMemo) > BOUNCE_ELIM_TIME)
+      {
+         knobPsuh = PUSH;
+      }
+      
+  }  
+}
+/**
+ * @brief draws and moves the cursor on the LCD
+ * 
+ */
+void ArrowIndex(bool force)
+{
+  flagUpperMenu=false;
+  flagLowerMenu=false;
+  if(knobRotation!=NO_ROTATION )
+  {  
+    if(knobRotation==CW)
+    { arrowIndexRow ++; }
+    
+    else if(knobRotation==CCW)
+    { arrowIndexRow --; }
+
+    if(arrowIndexRow<1)
+    { arrowIndexRow= MAX_ROW_INDEX_LCD; }
+
+    else if (arrowIndexRow>MAX_ROW_INDEX_LCD)
+    { arrowIndexRow=1; }
+
+    if(arrowOldPosition==MAX_ROW_INDEX_LCD && arrowIndexRow==1 )
+    {
+      flagUpperMenu=false;
+      flagLowerMenu=true;
+    }
+    else if (arrowOldPosition==1 && arrowIndexRow==MAX_ROW_INDEX_LCD)
+    {
+      flagUpperMenu=true;
+      flagLowerMenu=false;
+    }
+    lcd.setCursor(0,arrowIndexRow);
+    lcd.write((byte)0);
+    lcd.setCursor(0,arrowOldPosition);
+    lcd.print(" ");
+    knobRotation=NO_ROTATION;
+    arrowOldPosition=arrowIndexRow;
+  }
+  else if(force)
+  {
+    lcd.setCursor(0,arrowIndexRow);
+    lcd.write((byte)0);
+    arrowOldPosition=arrowIndexRow;
+  }
+ 
+}
+/**
+ * @brief replaces the lcd.clear() function of the library 
+ *        because it causes display problems.
+ * 
+ */
+void lcdClear()
+{
+  lcd.setCursor(0,0);
+  lcd.print("                    ");
+  lcd.setCursor(0,1);
+  lcd.print("                    ");
+  lcd.setCursor(0,2);
+  lcd.print("                    ");
+  lcd.setCursor(0,3);
+  lcd.print("                    ");
 }
 /**
  * @brief  read the value of the potentiometer and display it 
