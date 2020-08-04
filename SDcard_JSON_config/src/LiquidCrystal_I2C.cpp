@@ -58,35 +58,35 @@ LiquidCrystal_I2C::LiquidCrystal_I2C(PCF8574_address addr, uint8_t P0, uint8_t P
   {
     switch(PCF8574_TO_LCD[i])
     {
-      case 4:                   //RS pin
+      case 11:                   //RS pin ic number
         _LCD_TO_PCF8574[7] = i;
         break;
 
-      case 5:                   //RW pin
+      case 10:                   //RW pin
         _LCD_TO_PCF8574[6] = i;
         break;
 
-      case 6:                   //EN pin
+      case 9:                   //EN pin
         _LCD_TO_PCF8574[5] = i;
         break;
 
-      case 14:                  //D7 pin
+      case 7:                  //D7 pin
         _LCD_TO_PCF8574[4] = i;
         break;
 
-      case 13:                  //D6 pin
+      case 6:                  //D6 pin
         _LCD_TO_PCF8574[3] = i;
         break;
 
-      case 12:                  //D5 pin
+      case 5:                  //D5 pin
         _LCD_TO_PCF8574[2] = i;
         break;
 
-      case 11:                  //D4 pin
+      case 4:                  //D4 pin
         _LCD_TO_PCF8574[1] = i;
         break;
 
-      case 16:                  //BL pin
+      case 12:                  //BL pin
         _LCD_TO_PCF8574[0] = i;
         break;
 
