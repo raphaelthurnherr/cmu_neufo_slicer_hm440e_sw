@@ -19,18 +19,18 @@ void board_2004_01_V01::begin(void){
 	PCA9629_GPIOConfig(&CHANNEL_A_MOTOR, 0xC3);
 }
 
-void  board_2004_01_V01::stepperRotation(char motor, char speed, int steps){
+void  board_2004_01_V01::stepperRotation(char motor, int speed, int steps){
     int direction;
     device_pca9629 *selectedMotor;
-
     if(speed > 0)
         direction = 1;
     else 
         if(speed < 0){
+            
             direction = -1;
             speed*=-1;
         }
-
+   
     switch (motor){
         case MOTOR_A: selectedMotor = &CHANNEL_A_MOTOR; break;
         default: selectedMotor = &CHANNEL_A_MOTOR; break;
