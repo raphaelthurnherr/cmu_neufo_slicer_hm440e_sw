@@ -2,11 +2,13 @@
  * @file jsonConfigSDcard.c
  * @author Raphael Thurnherr (raphael.thurnherr@unige.ch)
  * @brief These functions can open a file, deserialize the JSON data and put the values to a defined stucture in header file
- * @version 0.1
- * @date 2020-07-20
+ * @version 0.2
+ * @date 2020-08-06
+ * 
+ * @remark 06.08.2020 - Adding config for NTC resistor and Temperature alarm degree user Setting, change "tempAlarm" by "alarmState"
  * 
  * @copyright Copyright (c) 2020
- * 
+ *  
  */
 
 // User application header file
@@ -83,10 +85,12 @@ if(loadFileFromSD(fileName, buffer) == NO_ERROR){
       userSetting->thresholdToRewind = JSONdoc["UsersSettings"][configNb]["thresholdToRewind"];
       userSetting->thresholdToCut = JSONdoc["UsersSettings"][configNb]["thresholdToCut"];
 
-      // get the alarm state from string
-      if(!strcmp(JSONdoc["UsersSettings"][configNb]["TemperatureAlarm"], "on")){
-        userSetting->alarm = 1;
-      }else userSetting->mode = 0;
+      // get the temperatur alarm state from string
+      if(!strcmp(JSONdoc["UsersSettings"][configNb]["TempAlarmState"], "on")){
+        userSetting->alarmState = 1;
+      }else userSetting->alarmState = 0;
+
+      userSetting->tempAlarmDegree = JSONdoc["UsersSettings"][configNb]["TemperatureAlarm"];
 
       #ifdef SERIAL_DEBUG
       Serial.println("User config\n------------");
@@ -97,6 +101,8 @@ if(loadFileFromSD(fileName, buffer) == NO_ERROR){
       Serial.println(userSetting->thresholdToRewind);
       Serial.println(userSetting->thresholdToCut);
       Serial.println(userSetting->alarm);
+      Serial.println(userSetting->alarmState);
+      Serial.println(userSetting->tempAlarmDegree);
       #endif
       return 0;
     }
@@ -260,9 +266,12 @@ if(machineConfig->ScreenBacklight == 0)
   General["ScreenBacklight"] = "off";
   else General["ScreenBacklight"] = "on";
 
+// NTC Settings
+General["NTC_Coeff"] = machineConfig->NTCsensor.RThbeta;
+General["NTC_RRef"] = machineConfig->NTCsensor.RRef;
+
 // SERIALIZATION OF USER SETTINGS
 JsonArray UsersSettings = JSONdoc.createNestedArray("UsersSettings");
-
 
 int i;
 JsonObject JSON_UsersSettings[6];
@@ -283,10 +292,12 @@ for(i=0;i<nbOfUserConfig;i++){
   JSON_UsersSettings[i]["thresholdToRewind"] = pUser->thresholdToRewind;
   JSON_UsersSettings[i]["thresholdToCut"] = pUser->thresholdToCut;
 
-  if(pUser->alarm == 0)
-      JSON_UsersSettings[i]["TemperatureAlarm"] = "off";
+  if(pUser->alarmState == 0)
+      JSON_UsersSettings[i]["TempAlarmState"] = "off";
   else
-      JSON_UsersSettings[i]["TemperatureAlarm"] = "on";
+      JSON_UsersSettings[i]["TempAlarmState"] = "on";
+
+  JSON_UsersSettings[i]["TemperatureAlarm"] = pUser->tempAlarmDegree;
 
 }
 // Serialize to unformatted output (in line)

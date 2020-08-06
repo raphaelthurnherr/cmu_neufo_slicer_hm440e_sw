@@ -17,7 +17,7 @@
 #include "cmu_ws_2004_01_V1_board.h"
 #include <Wire.h> 
 #include "LiquidCrystal_I2C.h"
-#include <jsonConfigSDcard.h>
+#include "jsonConfigSDcard.h"
 #include <SdFat.h>
 #include "mcp230xx.h"
 
@@ -114,6 +114,8 @@ struct MENU
 
 /*=======prototype function=====================*/
 
+void MenuAlarmState();
+void MenuAlarmSetting();
 void MenuAlarm();
 void MenuThresholdToCut();
 void ScreenThreshold();
@@ -131,7 +133,7 @@ void UserConfigScreenOne();
 void UserConfigScreenTwo();
 void knobRotationDetection();
 void knobSwitchDetection();
-void RemoveZero(unsigned int value, unsigned char colonne, unsigned char ligne);
+void RemoveZero( int value, unsigned char colonne, unsigned char ligne);
 void ThresholdDetection(unsigned int value);
 unsigned int AverageAdc (unsigned int valAdc);
 void SaveThreshold();
@@ -188,6 +190,7 @@ void setup() {
   lcd.createChar(0, retarrow);
   //init PCA9629A and Driver L298 
   motor_2004_board.begin();
+  delay(100);
   //select User Menu 
   MenuSelectUser();
   //fixed text display home screen 
@@ -497,7 +500,7 @@ void UserConfigScreenTwo()
     lcd.print("Thresholds");
     lcd.setCursor(1,3);
     lcd.print("Alarm = ");
-    if(userConfig[currentUser].alarm)
+    if(userConfig[currentUser].alarmState)
     {
       lcd.print("ON");
     }
@@ -671,7 +674,7 @@ void MenuSelectUser()
           lcd.print(userConfig[currentUser].thresholdToRewind);
           lcd.setCursor(0,3);
           lcd.print("Alam : ");
-          if(userConfig[currentUser].alarm == ALARM_ON)
+          if(userConfig[currentUser].alarmState == ALARM_ON)
           {
             lcd.print("On");
           }
@@ -683,7 +686,7 @@ void MenuSelectUser()
         case 5:
           lcd.setCursor(0,2);
           lcd.print("Alam : ");
-          if(userConfig[currentUser].alarm == ALARM_ON)
+          if(userConfig[currentUser].alarmState == ALARM_ON)
           {
             lcd.print("On");
           }
@@ -870,6 +873,65 @@ void MenuThresholdToRewind()
  */
 void MenuAlarm()
 {
+  lcdClear();
+  arrowIndexRow=1;
+  ArrowIndex(FORCE);
+  lcd.setCursor(0,0);
+  lcd.print("-----Alarm-----");
+
+  lcd.setCursor(1,1);
+  lcd.print("Alarm State : ");
+  if(userConfig[currentUser].alarmState)
+  {
+    lcd.print("ON");
+  }
+  else 
+  {
+    lcd.print("OFF");
+  }
+  lcd.setCursor(1,2);
+  lcd.print("Alarm Setting");
+  do
+  {
+      ArrowIndex(0);
+     if(knobPsuh == PUSH)
+     {
+       knobPsuh=NO_PUSH;
+       switch (arrowIndexRow)
+       {
+          case 1 :
+          MenuAlarmState();
+          break;
+          case 2 : 
+          MenuAlarmSetting();
+          break;
+          default:
+          break;
+       }
+      //fixed text display
+      lcdClear();
+      arrowIndexRow=1;
+      ArrowIndex(FORCE);
+      lcd.setCursor(0,0);
+      lcd.print("-----Alarm-----");
+
+      lcd.setCursor(1,1);
+      lcd.print("Alarm State : ");
+      if(userConfig[currentUser].alarmState)
+      {
+        lcd.print("ON");
+      }
+      else 
+      {
+        lcd.print("OFF");
+      }
+      lcd.setCursor(1,2);
+      lcd.print("Alarm Setting");
+     }
+  }while (knobPsuh != LONG_PUSH);
+}
+void MenuAlarmState()
+{
   static bool toggle = true;
   knobPsuh=NO_PUSH;
   //displays fixed text 
@@ -885,7 +947,7 @@ void MenuAlarm()
     lcd.setCursor(9,2);
   
     
-    if(userConfig[currentUser].alarm)
+    if(userConfig[currentUser].alarmState)
     {
       lcd.print("ON");
     }
@@ -895,7 +957,7 @@ void MenuAlarm()
     }
   
   do{
-  //activates or deactivates the temperature alarm 
+  //activates or deactivates the temperature alarmState 
     if(knobRotation != NO_ROTATION)
     {
       knobRotation = NO_ROTATION;
@@ -905,17 +967,51 @@ void MenuAlarm()
       if(toggle)
       {
         myString = "ON ";
-        userConfig[currentUser].alarm = ALARM_ON;
+        userConfig[currentUser].alarmState = ALARM_ON;
       }
       else 
       {     
         myString = "OFF";
-        userConfig[currentUser].alarm = Alarm_OFF;
+        userConfig[currentUser].alarmState = Alarm_OFF;
       }
       lcd.setCursor(9,2);
       lcd.print(myString);
     }
   }while (knobPsuh != PUSH);
+  knobPsuh =NO_PUSH;
+}
+/**
+ * @brief Alarm temperatur setting
+ * 
+ */
+void MenuAlarmSetting()
+{
+  int tempAlarmDegree= userConfig[currentUser].tempAlarmDegree;
+  lcdClear();
+  lcd.setCursor(0,2);
+  lcd.write((byte)0);
+  lcd.setCursor(1,0);
+  lcd.print("---Temp. setting--");
+  lcd.setCursor(1,2);
+  lcd.print("Temp. = ");
+  lcd.print(userConfig[currentUser].tempAlarmDegree);
+  lcd.setCursor(9,2);
+  do
+  {
+    if(knobRotation == CW)
+      tempAlarmDegree++;
+    else if (knobRotation == CCW)
+      tempAlarmDegree--;
+    if(knobRotation != NO_ROTATION)
+    {
+      knobRotation=NO_ROTATION;
+      lcd.setCursor(9,2);
+      lcd.print(tempAlarmDegree);
+      RemoveZero(tempAlarmDegree,9,2);
+    }
+  }while (knobPsuh != PUSH);
+  knobPsuh = NO_PUSH;
+  userConfig[currentUser].tempAlarmDegree = tempAlarmDegree;
 }
 /**
  * @brief calculates an average over 5 values of the analog converter.
@@ -953,8 +1049,14 @@ unsigned int AverageAdc (unsigned int valAdc)
  * @param column 
  * @param raw 
  */
-void RemoveZero(unsigned int value, unsigned char column, unsigned char raw)
+void RemoveZero( int value, unsigned char column, unsigned char raw)
 {
+   if(value<0)
+   {
+     value *= -1;
+     column += 1;
+   }
+      
    if(value<999)
    {
      lcd.setCursor (column+3,raw);

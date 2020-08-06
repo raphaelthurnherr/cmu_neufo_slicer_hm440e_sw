@@ -22,6 +22,7 @@ typedef struct mcp230xx{
     unsigned int gpioDirection;                // Specify the GPIO's port dirtection, 1 input, 0 output
     unsigned int invertedInput;               // >0, invert the output input level
     unsigned int pullupEnable;                 // The internal pullup 100k resistor configuration, 1 enable, 0 disable.
+    unsigned int gpioIntEnable;
 } device_mcp230xx;
 
 /**

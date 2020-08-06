@@ -213,6 +213,7 @@ int mcp230xx_setPort(device_mcp230xx *mcp230xxconfig, unsigned char value){
  * @param polarity, output Polarity, 1 = Active-high, 0 = Active-low
  * @return int 
  */
+/*
 int mcp230xx_setIntPolaity(device_mcp230xx *mcp230xxconfig, unsigned char polarity )
 {
     unsigned char err=0;
@@ -231,7 +232,7 @@ int mcp230xx_setIntPolaity(device_mcp230xx *mcp230xxconfig, unsigned char polari
     err += i2c_write(0, deviceAddress, IOCON | , IOCON |INTPOL );
     return err;
 }
-
+*/
 /**
  * \brief MCP230xx get input value on GPIO port
  * \param pointer on the configuration structure
