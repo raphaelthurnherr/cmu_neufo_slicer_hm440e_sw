@@ -112,12 +112,13 @@ int mcp23017_init(device_mcp230xx *mcp230xxconfig){
 
     // Set Interrupt enable    
     if(!err) 
-    err+= i2c_write(0, deviceAddress, GPINTEN, (gpioIntEnable & 0xFF00)>>8);
+    err+= i2c_write(0, deviceAddress, GPINTEN | 0x10, (gpioIntEnable & 0xFF00)>>8);
     
     /*
     if(err)
         printf("Kehops I2C MCP23017 device initialization with %d error\n", err);
     */
+   
     return err;
 }
 
@@ -192,19 +193,32 @@ int mcp230xx_setChannel(device_mcp230xx *mcp230xxconfig, unsigned char channel, 
 }
 
 /**
- * \brief MCP230xx set output values on all GPIO port bits
+ * \brief MCP23008 set output values on all GPIO port bits
  * \param pointer on the configuration structure
  * \param value, value to apply on outputs
  * \return code error
  */
-int mcp230xx_setPort(device_mcp230xx *mcp230xxconfig, unsigned char value){
+int mcp23008_setPort(device_mcp230xx *mcp230xxconfig, unsigned char value){
     unsigned char err =0;
     unsigned char deviceAddress = mcp230xxconfig->deviceAddress;
     
     err += i2c_write(0, deviceAddress, OLAT, value);
     return err;
 }
-
+/**
+ * \brief MCP230xx set output values on all GPIO port bits
+ * \param pointer on the configuration structure
+ * \param value, value to apply on outputs
+ * \return code error
+ */
+int mcp23017_setPort(device_mcp230xx *mcp230xxconfig, unsigned char value){
+    unsigned char err =0;
+    unsigned char deviceAddress = mcp230xxconfig->deviceAddress;
+    
+    err += i2c_write(0, deviceAddress, OLAT, value);
+    err += i2c_write(0, deviceAddress, OLAT|0x10, value);
+    return err;
+}
 /**
  * @brief select the output polarity of the interrupt pins.
  * Disables the ODR bit of the IOCON register, be careful this configures the output to push-pull 
@@ -213,26 +227,114 @@ int mcp230xx_setPort(device_mcp230xx *mcp230xxconfig, unsigned char value){
  * @param polarity, output Polarity, 1 = Active-high, 0 = Active-low
  * @return int 
  */
-/*
-int mcp230xx_setIntPolaity(device_mcp230xx *mcp230xxconfig, unsigned char polarity )
+
+int mcp230xx_setIntPolaity(device_mcp230xx *mcp230xxconfig, unsigned char INTx,  unsigned char polarity )
 {
     unsigned char err=0;
+    unsigned char GPIOREG_SEL = 0x00;       // By default, PORT A Selected (Reg adresse 0x00..0x0A
+    unsigned char MCP230xx_IOCON_VALUE = 0x00;
     unsigned char deviceAddress = mcp230xxconfig->deviceAddress;
     unsigned char INTPOL = 0x02;
     unsigned char ODR = 0x04;
-   
-    if(polarity)
-        INTPOL |= 0x02;//Active-high
-    else 
-        INTPOL &= ~0x02;//Active-low
-        
+    if(INTx)
+      GPIOREG_SEL = 0x10;
+
+    err += i2c_readByte(0, deviceAddress, IOCON|GPIOREG_SEL,&MCP230xx_IOCON_VALUE);    
+    
+    
     // disable ODR to not override INTPOL   
-    err += i2c_write(0, deviceAddress, IOCON ,  IOCON | ~ODR );
+    err += i2c_write(0, deviceAddress, IOCON|GPIOREG_SEL,  MCP230xx_IOCON_VALUE & ~ODR );
+    if(polarity)
+        MCP230xx_IOCON_VALUE |= INTPOL;//Active-high
+    else 
+        MCP230xx_IOCON_VALUE &= ~INTPOL;//Active-low
     // sets the polarity 
-    err += i2c_write(0, deviceAddress, IOCON | , IOCON |INTPOL );
+    err += i2c_write(0, deviceAddress, IOCON|GPIOREG_SEL , MCP230xx_IOCON_VALUE );
     return err;
 }
-*/
+/**
+ * @brief 
+ * 
+ * @param mcp230xxconfig 
+ * @param channel 
+ * @param state 
+ * @return int 
+ */
+int mcp230xx_DEFVAL(device_mcp230xx *mcp230xxconfig, unsigned char channel, unsigned char state)
+{
+    unsigned char err =0;
+    unsigned char GPIOREG_SEL = 0x00;       // By default, PORT A Selected (Reg adresse 0x00..0x0A
+    unsigned char MCP230xx_DEFVAL = 0x00;
+    unsigned char deviceAddress = mcp230xxconfig->deviceAddress;
+
+    // Modify address register (0x10 .. 0x1A) if channel 8..15 are used according the bank register of MCP23017 
+    if(channel >= 8){
+        GPIOREG_SEL = 0x10;
+        channel -= 8;       // Convert 16 port to 2x 8 bit port. (Channel 16 will be channel 7 on PORT B)
+    }
+    err += i2c_readByte(0, deviceAddress, IDEFVAL|GPIOREG_SEL,&MCP230xx_DEFVAL);    
+    if(state)
+        MCP230xx_DEFVAL |= (0x01<<channel);
+    else
+        MCP230xx_DEFVAL &= (0xFF-(0x01 << channel));
+    err += i2c_write(0, deviceAddress, IDEFVAL | GPIOREG_SEL, MCP230xx_DEFVAL);
+    return err;
+}
+/**
+ * @brief 
+ * 
+ * @param mcp230xxconfig 
+ * @param chanel 
+ * @param value 
+ * @return int 
+ */
+int mcp230xx_INTCON(device_mcp230xx *mcp230xxconfig,unsigned char channel, unsigned char value)
+{
+    unsigned char err =0;
+    unsigned char GPIOREG_SEL = 0x00;       // By default, PORT A Selected (Reg adresse 0x00..0x0A
+    unsigned char MCP230xx_INTCON = 0x00;
+    unsigned char deviceAddress = mcp230xxconfig->deviceAddress;
+    // Modify address register (0x10 .. 0x1A) if channel 8..15 are used according the bank register of MCP23017 
+    if(channel >= 8){
+        GPIOREG_SEL = 0x10;
+        channel -= 8;       // Convert 16 port to 2x 8 bit port. (Channel 16 will be channel 7 on PORT B)
+    }
+    err += i2c_readByte(0,deviceAddress, INTCON | GPIOREG_SEL, &MCP230xx_INTCON);
+    if(value)
+        MCP230xx_INTCON |= (0x01<<channel);
+    else
+        MCP230xx_INTCON &= (0xFF-(0x01 << channel));
+    err += i2c_write(0, deviceAddress, INTCON | GPIOREG_SEL, MCP230xx_INTCON);
+    return err;
+}
+int mcp230xx_intConfig(device_mcp230xx *mcp230xxconfig, unsigned char channel, unsigned char edge)
+{
+    unsigned char err =0;
+    unsigned char GPIOREG_SEL = 0x00;       // By default, PORT A Selected (Reg adresse 0x00..0x0A
+    unsigned char MCP230xx_GPINTEN = 0x00;
+    unsigned char deviceAddress = mcp230xxconfig->deviceAddress;
+    unsigned char state;
+    unsigned char oldChannel=channel;
+
+   
+    // Modify address register (0x10 .. 0x1A) if channel 8..15 are used according the bank register of MCP23017 
+    if(channel >= 8){
+        GPIOREG_SEL = 0x10;
+        channel -= 8;       // Convert 16 port to 2x 8 bit port. (Channel 16 will be channel 7 on PORT B)
+    }
+    err += i2c_readByte(0,deviceAddress, GPINTEN | GPIOREG_SEL, &MCP230xx_GPINTEN);
+    if(edge)
+        state = 1;
+    else{
+        state=0;}
+    MCP230xx_GPINTEN |= (0x01<<channel);
+    /*     
+    err += mcp230xx_DEFVAL(mcp230xxconfig,oldChannel,state);
+    err += mcp230xx_INTCON(mcp230xxconfig,oldChannel,0);*/
+    err += i2c_write(0, deviceAddress, GPINTEN | GPIOREG_SEL, MCP230xx_GPINTEN); 
+    return err; 
+     
+}
 /**
  * \brief MCP230xx get input value on GPIO port
  * \param pointer on the configuration structure

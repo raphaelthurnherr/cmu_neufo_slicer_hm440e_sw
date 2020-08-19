@@ -100,7 +100,7 @@ if(loadFileFromSD(fileName, buffer) == NO_ERROR){
       Serial.println(userSetting->thicknessTrimmingMode);
       Serial.println(userSetting->thresholdToRewind);
       Serial.println(userSetting->thresholdToCut);
-      Serial.println(userSetting->alarm);
+      //Serial.println(userSetting->alarm);
       Serial.println(userSetting->alarmState);
       Serial.println(userSetting->tempAlarmDegree);
       #endif

@@ -41,7 +41,6 @@
 #define DEFAULT_THRESHOLD_LOW 150
 
 //Pinout 
-#define BTN_GRBTGL 6
 #define ADC_POT A2
 #define ADC_NTC A3
 #define Buzzer A6
@@ -86,9 +85,37 @@
 #define MENU_ALARM 3
 #define EXIT 1
 
+//MCP23017
+#define FALLING_EDGE 1
+#define RISING_EDGE 0
+
+
 // LCD 
 #define MAX_ROW_INDEX_LCD 3
 #define FORCE 1
+
+//SLICER
+#define THICKNESS_MIN 1
+#define THICKNESS_MAX 500
+#define MODE_AUTO 1
+#define MODE_MAN 0
+//mcp23017
+#define BTN_GRBTGL 0
+#define BTN_RETREN 1
+#define BTN_ROLL 2
+#define BTN_AUTMAN 3
+#define BTN_RES 4
+#define SW_CALIBRATION 5
+#define JOY_TRIM 8
+#define JOY_GRBUP 9
+#define JOY_STP 10
+#define JOY_GRBDWN 11
+#define LED_AUTO 12
+#define LED_RETEN 13
+#define LED_RETRA 14
+#define LED_MAN 15
+//alim
+#define VCC 3.3
 // Boards declaration
 board_2004_01_V01 motor_2004_board; 
     
@@ -98,12 +125,20 @@ LiquidCrystal_I2C lcd(PCF8574_ADDR_A21_A11_A01 , 4, 5, 6, 7, 9, 10, 11, 12, POSI
 // Create new variable for user config storage
 SETTINGS userConfig[MAX_USER_SETTINGS];
 SLICERCONFIG machineConfig;
-
+device_mcp230xx mcp23017config= {"",0x24,0x0FFF,0X0000,0x0000,0x0FFF}; 
+/*
+mcp23017config.deviceAddress = 0x24;
+  mcp23017config.gpioDirection = 0xFF0F;
+  mcp23017config.invertedInput = 0X0000;
+  mcp23017config.pullupEnable  = 0x0000;
+  mcp23017config.gpioIntEnable = 0xFF0F;
+*/
 struct HOME
 {
   unsigned int counterValue;
   unsigned int trimValue;
   unsigned int feedValue;
+
 };
 
 struct MENU
@@ -111,74 +146,110 @@ struct MENU
   HOME home;
   //IndexMenu indexArrow;
 };
-
+typedef struct t_NTCsensor{
+  struct s_ntc_setting{
+      int RThbeta=3950;  
+      int RTh0=10000;
+      int Th0=25;
+      int RRef=9970;
+  }settings;
+  struct s_ntc_data{
+      float RThValue=-1;  
+      float Temp=-1;
+  }measure;
+}NTCsensor;
 /*=======prototype function=====================*/
 
 void MenuAlarmState();
 void MenuAlarmSetting();
 void MenuAlarm();
 void MenuThresholdToCut();
-void ScreenThreshold();
 void MenuThreshold();
 void MenuThresholdToRewind();
-void ScreenThreshold();
 void MenuThreshold();
 void MenuThickness( );
 void MenuMode();
+void MenuBacklash();
 void MenuSelectConfig();
 void MenuUserConfig();
-void ArrowIndex(bool force);
+void MenuSlicerConfig();
+void MenuThicknessNormal();
+void MenuThicknessTrimming();
+void MenuMotorSpeed();
+void MenuSelectUser();
 void ViewMenuUserConfig();
+void ScreenThreshold();
 void UserConfigScreenOne();
 void UserConfigScreenTwo();
+void backlashCwConfig();
+void backlashCcwConfig();
+
+void ArrowIndex(bool force);
+void Home();
 void knobRotationDetection();
 void knobSwitchDetection();
 void RemoveZero( int value, unsigned char colonne, unsigned char ligne);
-void ThresholdDetection(unsigned int value);
+void ThresholdDetection(SLICERCONFIG *machineConfig, SETTINGS *userSetting, unsigned int valPot);
 unsigned int AverageAdc (unsigned int valAdc);
 void SaveThreshold();
-void Home();
 void ShowPot(unsigned char columns, unsigned char raw);
 void PortInit();
 void lcdClear();
-void MenuSelectUser();
 void HomeScreen();
-
-
+void TestSD();
+void MotorHomingSpeed();
+void MotorMovingSpeed();
+void ModeAuto();
+void ModeManu();
+float calcNTCTemp(int UR10K, NTCsensor * NTC);
+void GestionMesureTemp();
 
 
 
 //variable declaration 
 
 String myString;
-unsigned char counter;
 bool lastState;
 int knobRotation;
-int knobPsuh;
-unsigned int  valAdc;
-unsigned int  moyenne; 
-unsigned int thresholdHigh =900;
-unsigned int thresholdLow =600;
-bool swEncodeur;
+int gknobPsuh;
+unsigned int  gvalAdc;
+unsigned int gvalAdcNtc;
 int currentUser;
 int arrowIndexRow=1;
 int arrowOldPosition=MAX_ROW_INDEX_LCD;
-bool flagUpperMenu;
-bool flagLowerMenu;
-int i;
+bool gflagUpperMenu;
+bool gflagLowerMenu;
 int pas=10;
-int speed;
+int oldRotation;
+int gerr;
+int gbtnBackPressed;
+int gbtnAutoManPressed;
+int gbtnjoygrbupPressed;
+int gbtnjoygrdwnPressed;
+int gSwCalibPressed;
+int gbtnjoyStpPressed;
+int gbtnjoyTrimPressed;
+bool enRetractation=true;
+int modeAutoMan=MODE_AUTO;
+int gtemperatur;
+int state;
 byte retarrow[8] = {	0x10,0x10,0x14,0x16,0x1f,0x06,0x04};
 
 HOME home = {0,0,0};
 MENU menu;
-
+NTCsensor ntcSensor;
 
 // Arduino setup
 
 void setup() {
-  // init. port Arduino
+  /*
+  Serial.begin(9600);
+    while (!Serial) {
+     // wait for serial port to connect. Needed for native USB port only
+  }*/
+  // init+. port Arduino
   PortInit();
+   
   //Interupt setting 
   attachInterrupt(digitalPinToInterrupt(KNOB_CHANNEL_A),knobRotationDetection, FALLING);
   attachInterrupt(digitalPinToInterrupt(KNOB_SWITCH_A),knobSwitchDetection, FALLING);
@@ -190,49 +261,132 @@ void setup() {
   lcd.createChar(0, retarrow);
   //init PCA9629A and Driver L298 
   motor_2004_board.begin();
-  delay(100);
+  
+  //Get the General Slicer Config object
+  getGeneralSlicerConfig("config.cfg", &machineConfig);
+  //Serial.print(mcp23017config.gpioDirection );
+  digitalWrite(2,LOW);
+  digitalWrite(2,HIGH);
+  /*
+  err+=mcp230xx_setIntPolaity(&mcp23017config,0,1);
+  err+=mcp230xx_setIntPolaity(&mcp23017config,1,1);
+   err += mcp230xx_INTCON(&mcp23017config,0,1);
+  err += mcp230xx_DEFVAL(&mcp23017config,0,1);
+  err+=mcp230xx_intConfig(&mcp23017config,1,FALLING_EDGE);
+  */
+  gerr+=mcp23017_init(&mcp23017config);
+  gerr+=mcp23017_setPort(&mcp23017config,0xFF);
+  lcd.setCursor(0,0);
+  lcd.print("please wait");
+  do
+  {
+    gSwCalibPressed = mcp230xx_getChannel(&mcp23017config,SW_CALIBRATION);
+    motor_2004_board.stepperRotation(MOTOR_A,-(machineConfig.HomingSpeed),50);
+  }while(gSwCalibPressed);
+  lcdClear();
   //select User Menu 
   MenuSelectUser();
   //fixed text display home screen 
   HomeScreen();
+ 
+ 
 }
 
 void loop() {
-  //allows you to enter the configuration menus 
-  if (knobPsuh == LONG_PUSH)
+  //allows you to enter the configuration menus
+  if (gknobPsuh == LONG_PUSH)
   {
-    knobPsuh = NO_PUSH;
-    //select User Menu  
+    gknobPsuh = NO_PUSH;
+    //select config Menu  
     MenuSelectConfig();
     //fixed text display home screen 
     HomeScreen();
     //Saves the configuration to the MicroSD card
-    saveUserAndGeneralSettings("config.cfg", &machineConfig, userConfig, MAX_USER_SETTINGS);
+    saveUserAndGeneralSettings("config.cfg", &machineConfig, userConfig, MAX_USER_SETTINGS);    
   }
   else
   {
     //changes the values in the home screen
     Home();
-
+    gbtnAutoManPressed= mcp230xx_getChannel(&mcp23017config,BTN_AUTMAN);
+    if(!gbtnAutoManPressed && lastState != gbtnAutoManPressed)
+    modeAutoMan = !modeAutoMan;
+    lastState=gbtnAutoManPressed;
+    if(modeAutoMan == MODE_AUTO)
+    {
+      ModeAuto();
+    }
+    else 
+    {
+      ModeManu();
+    }
+    gbtnjoygrbupPressed = mcp230xx_getChannel(&mcp23017config,JOY_GRBUP);
+    if(gbtnjoygrbupPressed )
+    {
+      do
+      {
+         if(motor_2004_board.getStepperState(MOTOR_A)==0)
+          motor_2004_board.stepperRotation(MOTOR_A,machineConfig.HomingSpeed,50);
+        gbtnjoygrbupPressed = mcp230xx_getChannel(&mcp23017config,JOY_GRBUP);
+       state = motor_2004_board.getStepperState(MOTOR_A);
+      if(motor_2004_board.getStepperState(MOTOR_A)==0) 
+      home.counterValue +=50; 
+      }while (gbtnjoygrbupPressed );
+    }
+    gbtnjoygrdwnPressed = mcp230xx_getChannel(&mcp23017config,JOY_GRBDWN);
+    gSwCalibPressed = mcp230xx_getChannel(&mcp23017config,SW_CALIBRATION);
+    if(gbtnjoygrdwnPressed && gSwCalibPressed)
+    {
+      do
+      {
+        gbtnjoygrdwnPressed = mcp230xx_getChannel(&mcp23017config,JOY_GRBDWN);
+        gSwCalibPressed = mcp230xx_getChannel(&mcp23017config,SW_CALIBRATION);
+        if(motor_2004_board.getStepperState(MOTOR_A)==0)
+          motor_2004_board.stepperRotation(MOTOR_A,-(machineConfig.HomingSpeed),50);
+          
+      }while(gbtnjoygrdwnPressed && gSwCalibPressed);
+    }
+ 
+    gbtnjoyStpPressed = mcp230xx_getChannel(&mcp23017config,JOY_STP);
+    if(gbtnjoyStpPressed)
+      userConfig[currentUser].mode = MODE_NORMAL;
+    gbtnjoyTrimPressed = mcp230xx_getChannel(&mcp23017config,JOY_TRIM);
+    if(gbtnjoyTrimPressed)
+      userConfig[currentUser].mode = MODE_TRIMMING; 
+     GestionMesureTemp();
+     
+    //ModeManu();
+    /*
     if(knobRotation==CW)
     {
-      speed = 90;
       
-       
-       motor_2004_board.stepperRotation(MOTOR_A, speed, 200);
+      speed = 50;
       
-       home.counterValue +=1; 
+      if(oldRotation == CCW) 
+       motor_2004_board.stepperRotation(MOTOR_A, speed, pas+machineConfig.BacklashCW);
+      else 
+      {
+       motor_2004_board.stepperRotation(MOTOR_A, speed, pas);}
+       oldRotation = CW;
+       home.counterValue +=pas; 
       
     }
     else if(knobRotation==CCW)
     {
-      speed = -90;
+      
+      speed = -50;
      
       
       
-      motor_2004_board.stepperRotation(MOTOR_A, speed, 200);
+      if(oldRotation == CW) 
+       motor_2004_board.stepperRotation(MOTOR_A, speed, pas+machineConfig.BacklashCCW);
+      else 
+      {
+       motor_2004_board.stepperRotation(MOTOR_A, speed, pas);
+      }
+       oldRotation = CCW;
       
-      home.counterValue -=1;
+      home.counterValue -=pas;
     
       
     }
@@ -240,30 +394,228 @@ void loop() {
     {
       knobRotation = NO_ROTATION;
     }
+    */
+
   }
- 
+}
+void GestionMesureTemp()
+{ 
+  unsigned int timer;
+  static unsigned int oldTimer=0;
+  static unsigned int oldTimerBuzzer=0;
+
+  static unsigned char flagTresholdTemp=0;
+  timer=millis();
+  if((timer-oldTimer)>=1000)
+  {
+    oldTimer=timer;
+    gvalAdcNtc = analogRead(ADC_NTC);
+    gvalAdcNtc = ((3300* gvalAdcNtc)/1023);
+    ntcSensor.measure.Temp = calcNTCTemp(gvalAdcNtc, &ntcSensor);
+    ntcSensor.measure.Temp *=100;
+    ntcSensor.measure.Temp = (int)ntcSensor.measure.Temp /10;
+     ntcSensor.measure.Temp /=10;
+  }
+  /*
+  if(userConfig[currentUser].tempAlarmDegree<0)
+  {
+    if(ntcSensor.measure.Temp=<userConfig[currentUser].tempAlarmDegree)
+       flagTresholdTemp=1;
+  }
+  if(userConfig[currentUser].tempAlarmDegree>0)
+  {
+    if(ntcSensor.measure.Temp=>userConfig[currentUser].tempAlarmDegree)
+       flagTresholdTemp=1;
+  }
+  if(flagTresholdTemp)
+  {
+    if(userConfig[currentUser].tempAlarmDegree<0)
+    {
+      if(((ntcSensor.measure.Temp)+2)=<userConfig[currentUser].tempAlarmDegree)
+        
+    }
+    if(userConfig[currentUser].tempAlarmDegree>0)
+    {
+      if(((ntcSensor.measure.Temp)-2)=>userConfig[currentUser].tempAlarmDegree)
+        
+    }
+  }
   
- 
- 
+  if((timer-oldTimerBuzzer)>=100)
+  {
+    state=!state;
+    oldTimerBuzzer=timer;
+    if(state)
+    {
+      digitalWrite(Buzzer,HIGH);
+    }
+    else 
+    {
+       digitalWrite(Buzzer,LOW);
+    }
+  }*/
+}
+void ModeManu()
+{
+  unsigned int thickness= userConfig[currentUser].thicknessNormalMode;
+  static int odlState = 1;
+  int btnPressed;
+  int speed = machineConfig.MovingSpeed;
+ //activates leds
+  mcp230xx_setChannel(&mcp23017config,LED_AUTO,1);
+  mcp230xx_setChannel(&mcp23017config,LED_MAN,0);
+  
+  btnPressed=mcp230xx_getChannel(&mcp23017config,BTN_GRBTGL);
+  if(userConfig[currentUser].mode == NORMAL_MODE)
+    thickness = userConfig[currentUser].thicknessNormalMode;
+  else 
+    thickness = userConfig[currentUser].thicknessTrimmingMode;
+  if(!btnPressed && odlState!=btnPressed)
+  {
+    if((motor_2004_board.getStepperState(MOTOR_A))!=1)
+      motor_2004_board.stepperRotation(MOTOR_A, speed, thickness);
+    home.counterValue++;
+  }
+  odlState=btnPressed;
+}
+void ModeAuto()
+{
+  int btnPressed;
+  static int odlState = 1;
+  //activates the automatic led 
+  mcp230xx_setChannel(&mcp23017config,LED_AUTO,0);
+  mcp230xx_setChannel(&mcp23017config,LED_MAN,1);
+  if(enRetractation)
+    mcp230xx_setChannel(&mcp23017config,LED_RETEN,0);
+  btnPressed= mcp230xx_getChannel(&mcp23017config,BTN_RETREN);
+  if(!btnPressed && odlState!=btnPressed)
+  {
+    enRetractation = !enRetractation;
+  } 
+  odlState=btnPressed;
+  //determines the blade position
+  gvalAdc = analogRead(ADC_POT);
+  ThresholdDetection(&machineConfig, &userConfig[currentUser], gvalAdc);
 }
 
-
 /**
- * @brief Raises or lowers the platform depending on the position of the blade.
- * @param value 
+ * @brief Raises or lowers the platform depending on the position of the blade
+ * @param machineConfig 
+ * @param userSetting 
+ * @param valPot 
  */
-void  ThresholdDetection(unsigned int value)
+void ThresholdDetection(SLICERCONFIG *machineConfig, SETTINGS *userSetting, unsigned int valPot)
 {
-  static unsigned char memo;
-  if(value>= userConfig[currentUser].thresholdToCut && !memo)
-  { 
-       memo=1;
-      //motor_2004_board.stepperRotation(MOTOR_A, 50, DEFAULT_MOTOR_STEPS)
-  }
-  else if(value<= userConfig[currentUser].thresholdToRewind)
+  static unsigned char step=0;
+  static int speed = machineConfig->MovingSpeed;
+  static unsigned int thresholdToCut = userSetting->thresholdToCut;
+  static unsigned int thresholdToRewind = userSetting->thresholdToRewind;
+  unsigned int backlash = machineConfig->BacklashCW;
+  unsigned int thickness;
+
+  if(userSetting->mode == NORMAL_MODE)
+    thickness = userSetting->thicknessNormalMode;
+  else 
+    thickness = userSetting->thicknessTrimmingMode;
+  if(thresholdToCut != userSetting->thresholdToCut)
   {
-    memo=0;
+    thresholdToCut = userSetting->thresholdToCut;
+    step=0;
   }
+  if(thresholdToRewind != userSetting->thresholdToRewind)
+  {
+    thresholdToRewind = userSetting->thresholdToRewind;
+    step=0;
+  }    
+  switch (step)
+  {
+    case 0:// première passe
+      if(valPot <= thresholdToCut)
+        step=1;
+      break;
+    case 1://Attendre d'arriver au trheshold to rewind 
+     
+      if(valPot >= thresholdToRewind)
+      {       
+          if(!enRetractation)
+            step=3;
+          else 
+            step=2;
+        home.counterValue++;
+      }
+      
+      break;
+    case 2://Descendre plateau
+       gSwCalibPressed = mcp230xx_getChannel(&mcp23017config,SW_CALIBRATION);
+       if(gSwCalibPressed)
+       {
+         
+          if(speed>0)
+          {
+            backlash = machineConfig->BacklashCCW;
+            speed = (-1)*speed;
+          }
+          else 
+          {
+            backlash=0;
+          }
+          motor_2004_board.stepperRotation(MOTOR_A, speed, thickness+backlash);         
+       }
+        step=3;
+      break;
+    case 3://Allumer led retra 
+         if(motor_2004_board.getStepperState(MOTOR_A)==0)//motor stopped
+         {
+            //mcp230xx_setChannel(&mcp23017config,LED_RETRA,0);  
+            step=4;
+         }
+      break;
+    case 4://Attendre d'atteindre le threshold to cut  
+       mcp230xx_setChannel(&mcp23017config,LED_RETRA,0);  
+      if(valPot <= thresholdToCut)
+      {     
+          step=5;
+      }
+      break;
+    case 5://éteindre led 
+       mcp230xx_setChannel(&mcp23017config,LED_RETRA,1);
+       step=6;
+      break;
+    case 6:// Monter plateau 
+       
+          if(speed<0)
+          {
+            speed = (-1)*speed;
+            backlash = machineConfig->BacklashCW;
+          }
+          else 
+          {
+            backlash=0;
+          }
+          if(!enRetractation)
+          {
+            speed=machineConfig->MovingSpeed;
+            home.counterValue++;
+          }
+          else
+          {        
+            thickness+=thickness;
+          }
+          motor_2004_board.stepperRotation(MOTOR_A, speed, thickness+backlash);
+          step=7;
+      break;
+      case 7:
+       if(motor_2004_board.getStepperState(MOTOR_A)==0)//motor stopped
+        {  
+          step=1;
+        }
+      break;
+    default:
+      
+      break;
+  }
+  lcd.setCursor(15,3);
+  lcd.print(step);
 }
 /**
  * @brief Setup selection menu
@@ -272,7 +624,6 @@ void  ThresholdDetection(unsigned int value)
 void MenuSelectConfig()
 {
  static bool firstLoop=false;
- 
   do
     {
       if(!firstLoop)
@@ -293,10 +644,10 @@ void MenuSelectConfig()
 
       ArrowIndex(0);
       
-      if(knobPsuh == PUSH)
+      if(gknobPsuh == PUSH)
       {
         firstLoop=false;
-        knobPsuh = NO_PUSH;
+        gknobPsuh = NO_PUSH;
         switch (arrowIndexRow)
         {
           case 1:
@@ -306,14 +657,311 @@ void MenuSelectConfig()
           MenuUserConfig();
           break;
           case 3:
-            break;
+          MenuSlicerConfig();
+          break;
           default :
           break;
         }
       }
-    }while(knobPsuh != LONG_PUSH);
-    knobPsuh = NO_PUSH;
+      gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+    }while(gknobPsuh != LONG_PUSH && gbtnBackPressed == 1);
+    do
+      gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+    while (!gbtnBackPressed);
+    gknobPsuh = NO_PUSH;
     firstLoop=false;
+}
+void MenuSlicerConfig()
+{
+  static bool firstLoop=false;
+  do
+  {
+    if(!firstLoop)
+    {
+      firstLoop = true;
+      lcdClear();
+      lcd.setCursor(1,0);
+      lcd.print("---Slicer setting--");
+      lcd.setCursor(1,1);
+      lcd.print("Blacklash correct.");
+      lcd.setCursor(1,2);
+      lcd.print("Motor Speed");
+      lcd.setCursor(1,3);
+      lcd.print("NTC");
+      arrowIndexRow =1;
+      ArrowIndex(FORCE);
+    }
+
+    ArrowIndex(0);
+      
+    if(gknobPsuh == PUSH)
+    {
+      firstLoop=false;
+      gknobPsuh = NO_PUSH;
+      switch (arrowIndexRow)
+      {
+        case 1:
+        MenuBacklash();
+        break;
+        case 2: 
+        MenuMotorSpeed();
+        break;
+        case 3:
+        MenuSlicerConfig();
+        break;
+        default :
+        break;
+      }
+    }
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while(gknobPsuh != LONG_PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  gknobPsuh = NO_PUSH;
+  firstLoop=false;
+}
+void MenuBacklash()
+{
+   static bool firstLoop=false;
+   do
+    {
+      if(!firstLoop)
+      {
+        firstLoop = true;
+        lcdClear();
+        lcd.setCursor(1,0);
+        lcd.print("---Backlash set.--");
+        lcd.setCursor(1,1);
+        lcd.print("Blacklash CW");
+        lcd.setCursor(1,2);
+        lcd.print("Blacklash CCW");
+        arrowIndexRow =1;
+        ArrowIndex(FORCE);
+      }
+
+      ArrowIndex(0);
+      
+      if(gknobPsuh == PUSH)
+      {
+        firstLoop=false;
+        gknobPsuh = NO_PUSH;
+        switch (arrowIndexRow)
+        {
+          case 1:
+          backlashCwConfig();
+          break;
+          case 2: 
+          backlashCcwConfig();
+          break;
+          case 3:
+          break;
+          default :
+          break;
+        }
+      }
+      gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+    }while(gknobPsuh != LONG_PUSH&&gbtnBackPressed == 1 );
+    do
+      gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+    while (!gbtnBackPressed);
+    gknobPsuh = NO_PUSH;
+    firstLoop=false; 
+}
+void backlashCwConfig()
+{
+  int backlashCw=machineConfig.BacklashCW;
+  lcdClear();
+  lcd.setCursor(0,0);
+  lcd.print("--Backlash CW set.-");
+  lcd.setCursor(1,2);
+  lcd.print("Backlash = ");
+  lcd.setCursor(12,2);
+  lcd.print(machineConfig.BacklashCW);
+  //allows you to change mode 
+  do{
+    if(knobRotation != NO_ROTATION)
+    {
+      if(knobRotation == CW)
+      backlashCw++;
+      else if (knobRotation == CCW)
+       backlashCw--;
+      if(backlashCw<0)
+        backlashCw=0;
+      if(knobRotation != NO_ROTATION)
+      {
+        knobRotation=NO_ROTATION;
+        lcd.setCursor(12,2);
+        lcd.print(backlashCw);
+        RemoveZero(backlashCw,12,2);
+      }
+    }
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh!=PUSH && gbtnBackPressed == 1 );
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  gknobPsuh = NO_PUSH;
+  machineConfig.BacklashCW = backlashCw;
+}
+void backlashCcwConfig()
+{
+  int backlashCcw=machineConfig.BacklashCCW;
+  lcdClear();
+  lcd.setCursor(0,0);
+  lcd.print("-Backlash CCW set.-");
+  lcd.setCursor(1,2);
+  lcd.print("Backlash = ");
+  lcd.setCursor(12,2);
+  lcd.print(backlashCcw);
+  //allows you to change backlash ccw 
+  do{
+    if(knobRotation != NO_ROTATION)
+    {
+      if(knobRotation == CW)
+      backlashCcw++;
+      else if (knobRotation == CCW)
+       backlashCcw--;
+      if(backlashCcw<0)
+        backlashCcw=0;
+      if(knobRotation != NO_ROTATION)
+      {
+        knobRotation=NO_ROTATION;
+        lcd.setCursor(12,2);
+        lcd.print(backlashCcw);
+        RemoveZero(backlashCcw,12,2);
+      }
+    }
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh!=PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  gknobPsuh = NO_PUSH;
+  machineConfig.BacklashCCW = backlashCcw;
+}
+void MenuMotorSpeed()
+{
+   static bool firstLoop=false;
+   do
+    {
+      if(!firstLoop)
+      {
+        firstLoop = true;
+        lcdClear();
+        lcd.setCursor(1,0);
+        lcd.print("---Motor Speed--");
+        lcd.setCursor(1,1);
+        lcd.print("Homing Speed");
+        lcd.setCursor(1,2);
+        lcd.print("Moving Speed");
+        arrowIndexRow =1;
+        ArrowIndex(FORCE);
+      }
+
+      ArrowIndex(0);
+      
+      if(gknobPsuh == PUSH)
+      {
+        firstLoop=false;
+        gknobPsuh = NO_PUSH;
+        switch (arrowIndexRow)
+        {
+          case 1:
+          MotorHomingSpeed();
+          break;
+          case 2: 
+          MotorMovingSpeed();
+          break;
+          case 3:
+          break;
+          default :
+          break;
+        }
+      }
+      gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+    }while(gknobPsuh != LONG_PUSH && gbtnBackPressed == 1);
+    do
+      gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+    while (!gbtnBackPressed);
+    gknobPsuh = NO_PUSH;
+    firstLoop=false; 
+}
+void MotorHomingSpeed()
+{
+  int motorHomingSpeed=machineConfig.HomingSpeed;
+  lcdClear();
+  lcd.setCursor(0,0);
+  lcd.print("Motor homing speed");
+  lcd.setCursor(1,2);
+  lcd.print("Motor speed = ");
+  lcd.setCursor(15,2);
+  lcd.print(motorHomingSpeed);
+  //allows you to change motor Homing Speed 
+  do{
+    if(knobRotation != NO_ROTATION)
+    {
+      if(knobRotation == CW)
+      motorHomingSpeed++;
+      else if (knobRotation == CCW)
+       motorHomingSpeed--;
+      if(motorHomingSpeed>100)
+        motorHomingSpeed=100;
+      else if (motorHomingSpeed<0)
+        motorHomingSpeed=0;
+      if(knobRotation != NO_ROTATION)
+      {
+        knobRotation=NO_ROTATION;
+        lcd.setCursor(15,2);
+        lcd.print(motorHomingSpeed);
+        RemoveZero(motorHomingSpeed,15,2);
+      }
+    }
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh!=PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  gknobPsuh = NO_PUSH;
+  machineConfig.HomingSpeed = motorHomingSpeed;
+}
+void MotorMovingSpeed()
+{
+  int motorMovingSpeed=machineConfig.MovingSpeed;
+  lcdClear();
+  lcd.setCursor(0,0);
+  lcd.print("Motor homing speed");
+  lcd.setCursor(1,2);
+  lcd.print("Motor speed = ");
+  lcd.setCursor(15,2);
+  lcd.print(motorMovingSpeed);
+  //allows you to change motor Moving Speed 
+  do{
+    if(knobRotation != NO_ROTATION)
+    {
+      if(knobRotation == CW)
+      motorMovingSpeed++;
+      else if (knobRotation == CCW)
+       motorMovingSpeed--;
+      if(motorMovingSpeed>100)
+        motorMovingSpeed=100;
+      else if (motorMovingSpeed<0)
+        motorMovingSpeed=0;
+      if(knobRotation != NO_ROTATION)
+      {
+        knobRotation=NO_ROTATION;
+        lcd.setCursor(15,2);
+        lcd.print(motorMovingSpeed);
+        RemoveZero(motorMovingSpeed,15,2);
+      }
+    }
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh!=PUSH&& gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  gknobPsuh = NO_PUSH;
+  machineConfig.MovingSpeed = motorMovingSpeed;
 }
 void MenuUserConfig()
 {
@@ -323,16 +971,16 @@ void MenuUserConfig()
     {
       ArrowIndex(0);
       
-      if(flagLowerMenu || flagUpperMenu)
+      if(gflagLowerMenu || gflagUpperMenu)
       {
         menuNumber = !menuNumber;
         ViewMenuUserConfig();
         
       }
-      Serial.print(arrowIndexRow);
-      if(knobPsuh == PUSH)
+     
+      if(gknobPsuh == PUSH)
       {
-        knobPsuh = NO_PUSH;
+        gknobPsuh = NO_PUSH;
         if(!menuNumber)
         {
           switch (arrowIndexRow)
@@ -370,11 +1018,14 @@ void MenuUserConfig()
           }
         }
         ViewMenuUserConfig();
-        knobPsuh = NO_PUSH;
+        gknobPsuh = NO_PUSH;
       }
-   
-    }while(knobPsuh != LONG_PUSH);
-    knobPsuh = NO_PUSH;
+     gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+    }while(gknobPsuh != LONG_PUSH && gbtnBackPressed == 1);
+    do
+     gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+    while (!gbtnBackPressed);
+    gknobPsuh = NO_PUSH;
 }
 
 /**
@@ -388,30 +1039,48 @@ void Home( )
  static unsigned int memoCntValue;
  static unsigned int memoFeedValue;
  static unsigned int memoTrimValue;
-
+ static float memoTemperature;
+ static int memoMode;
  
- if(memoFeedValue != home.feedValue)
+ if(memoFeedValue != userConfig[currentUser].thicknessNormalMode)
  {
-   lcd.setCursor(7,1);
-   lcd.print(home.feedValue);
-   RemoveZero(home.feedValue,7,1);
+   lcd.setCursor(5,1);
+   lcd.print(userConfig[currentUser].thicknessNormalMode);
+   RemoveZero(userConfig[currentUser].thicknessNormalMode,5,1);
  }
- if(memoTrimValue != home.trimValue)
+ if(memoTrimValue != userConfig[currentUser].thicknessTrimmingMode)
  {
-   lcd.setCursor(17,1);
-   lcd.print(home.feedValue);
-   RemoveZero(home.trimValue,17,1);
+   lcd.setCursor(15,1);
+   lcd.print(userConfig[currentUser].thicknessTrimmingMode);
+   RemoveZero(userConfig[currentUser].thicknessTrimmingMode,15,1);
  }
  if(memoCntValue != home.counterValue)
  {
-   lcd.setCursor(10,3);
+   lcd.setCursor(8,3);
    lcd.print(home.counterValue);
-   RemoveZero(home.counterValue,10,3);
+   RemoveZero(home.counterValue,8,3);
+ }
+ if(memoTemperature != ntcSensor.measure.Temp)
+ {
+   lcd.setCursor(6,2);
+   lcd.print("     ");
+   lcd.setCursor(6,2);
+   lcd.print(ntcSensor.measure.Temp,1);
+   //RemoveZero(ntcSensor.measure.Temp,7,2);
+ }
+ if(memoMode != userConfig[currentUser].mode)
+ {
+   lcd.setCursor(5,0);
+   if(userConfig[currentUser].mode == MODE_NORMAL)
+    lcd.print("Normal");
+  else
+   lcd.print("Trim.  ");
  }
  memoCntValue = home.counterValue;
- memoFeedValue = home.feedValue;
- memoTrimValue = home.trimValue;
-
+ memoFeedValue = userConfig[currentUser].thicknessNormalMode;
+ memoTrimValue = userConfig[currentUser].thicknessTrimmingMode;
+ memoTemperature = ntcSensor.measure.Temp;
+ memoMode = userConfig[currentUser].mode; 
 }
 /**
  * @brief fixed text display of the home screen
@@ -420,17 +1089,28 @@ void Home( )
 void HomeScreen()
 {
   lcdClear();
+  lcd.setCursor(0,0);
+  lcd.print("Mode=");
+  if(userConfig[currentUser].mode == MODE_NORMAL)
+    lcd.print("Normal");
+  else 
+    lcd.print("Trim.");
   lcd.setCursor(0,1);
-  lcd.print("Feed =");
-  lcd.print(home.feedValue);
+  lcd.print("Feed=");
+  lcd.print(userConfig[currentUser].thicknessNormalMode);
   lcd.setCursor(10,1);
-  lcd.print("TRIM =");
-  lcd.print(home.trimValue);
+  lcd.print("TRIM=");
+  lcd.print(userConfig[currentUser].thicknessTrimmingMode);
   lcd.setCursor(0,3);
-  lcd.print("Counter = ");
+  lcd.print("Counter=");
   lcd.print(home.counterValue);
   lcd.setCursor(12,0);
   lcd.print(userConfig[currentUser].name);
+  lcd.setCursor(0,2);
+  lcd.print("Temp =      C");
+  lcd.setCursor(6,2);
+  lcd.print(ntcSensor.measure.Temp,1);
+  //lcd.write(0xa1);
 }
 /**
  * @brief allows to change the fixed text between screen one and screen two 
@@ -441,7 +1121,7 @@ void ViewMenuUserConfig()
  // static bool firstLoop=false;
   static bool flagScreenTwo=false;
    
-  if(flagUpperMenu ||  flagLowerMenu)
+  if(gflagUpperMenu ||  gflagLowerMenu)
   {
     //firstLoop=false;
     flagScreenTwo= !flagScreenTwo;
@@ -553,7 +1233,11 @@ void MenuMode()
       lcd.setCursor(8,2);
       lcd.print(myString);
     }
-  }while (knobPsuh!=PUSH);
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh!=PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
 
 }
 /**
@@ -627,10 +1311,12 @@ void MenuSelectUser()
           if(userConfig[currentUser].mode==MODE_NORMAL)
           {
             lcd.print("Normal");
+            
           }
           else 
           {
             lcd.print("Trimming");
+            
           }
           lcd.setCursor(0,3);
           lcd.print("Thick. Nor. =     um");
@@ -714,9 +1400,13 @@ void MenuSelectUser()
         screenNum=0; 
       }
     }
-   
-  } while (knobPsuh != PUSH);
-  knobPsuh=NO_PUSH;
+   gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+
+  } while ( gbtnBackPressed && gknobPsuh != PUSH);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  gknobPsuh=NO_PUSH;
   lcdClear(); 
 }
 /**
@@ -725,19 +1415,144 @@ void MenuSelectUser()
  */
 void MenuThickness( )
 {
+  lcdClear();
+  arrowIndexRow=1;
+  ArrowIndex(FORCE);
   lcd.setCursor(0,0);
   lcd.print("-----Thickness-----");
 
   lcd.setCursor(1,1);
-  lcd.print("Normal = ");
+  lcd.print("Normal  = ");
   lcd.print(userConfig[currentUser].thicknessNormalMode);
+  lcd.print(" um");
 
-  lcd.setCursor(2,1);
+  lcd.setCursor(1,2);
   lcd.print("Triming = ");
   lcd.print(userConfig[currentUser].thicknessTrimmingMode);
+  lcd.print(" um");
 
-  lcd.setCursor(3,1);
-  lcd.print("Exit");
+  do
+  {
+      ArrowIndex(0);
+     if(gknobPsuh == PUSH)
+     {
+       gknobPsuh=NO_PUSH;
+       switch (arrowIndexRow)
+       {
+          case 1 :
+          MenuThicknessNormal();
+          break;
+          case 2 : 
+          MenuThicknessTrimming();
+          break;
+          default:
+          break;
+       }
+      //fixed text display
+      lcdClear();
+      ArrowIndex(FORCE);
+      lcd.setCursor(0,0);
+      lcd.print("-----Thickness-----");
+
+      lcd.setCursor(1,1);
+      lcd.print("Normal  = ");
+      lcd.print(userConfig[currentUser].thicknessNormalMode);
+      lcd.print(" um");
+
+      lcd.setCursor(1,2);
+      lcd.print("Triming = ");
+      lcd.print(userConfig[currentUser].thicknessTrimmingMode);
+      lcd.print(" um");
+     }
+     gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh != LONG_PUSH&&gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+}
+void MenuThicknessNormal()
+{
+  unsigned int thickness = userConfig[currentUser].thicknessNormalMode;
+  lcdClear();
+  arrowIndexRow=2;
+  ArrowIndex(FORCE);
+  lcd.setCursor(0,0);
+  lcd.print("-Thickness normal--");
+  lcd.setCursor(1,2);
+  lcd.print("Thickness = ");
+  lcd.print(thickness);
+  lcd.setCursor(17,2);
+  lcd.print("um");
+  gknobPsuh=NO_PUSH;
+  //stores the user's threshold to cut value
+  do 
+  {
+    if(knobRotation==CW)
+      thickness++;
+    else if(knobRotation==CCW)
+      thickness--;
+    if(thickness<THICKNESS_MIN)
+      thickness=THICKNESS_MIN;
+    if(thickness>THICKNESS_MAX)
+      thickness=THICKNESS_MAX;   
+    if(knobRotation!=NO_ROTATION)
+    {
+      knobRotation = NO_ROTATION;
+      lcd.setCursor(13,2);
+      lcd.print(thickness);
+      RemoveZero(thickness,13,2);
+      lcd.setCursor(17,2);
+      lcd.print("um");
+    }
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh!=PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  gknobPsuh = NO_PUSH;
+  userConfig[currentUser].thicknessNormalMode=thickness;
+}
+void MenuThicknessTrimming( )
+{
+  unsigned int thickness = userConfig[currentUser].thicknessTrimmingMode;
+  lcdClear();
+  arrowIndexRow=2;
+  ArrowIndex(FORCE);
+  lcd.setCursor(0,0);
+  lcd.print("-Thickness trimming");
+  lcd.setCursor(1,2);
+  lcd.print("Thickness = ");
+  lcd.print(thickness);
+  lcd.setCursor(17,2);
+  lcd.print("um");
+  gknobPsuh=NO_PUSH;
+  //stores the user's threshold to cut value
+  do 
+  {
+    if(knobRotation==CW)
+      thickness++;
+    else if(knobRotation==CCW)
+      thickness--;
+    if(thickness<THICKNESS_MIN)
+      thickness=THICKNESS_MIN;
+    if(thickness>THICKNESS_MAX)
+      thickness=THICKNESS_MAX;   
+    if(knobRotation!=NO_ROTATION)
+    {
+      knobRotation = NO_ROTATION;
+      lcd.setCursor(13,2);
+      lcd.print(thickness);
+      RemoveZero(thickness,13,2);
+      lcd.setCursor(17,2);
+      lcd.print("um");
+    }
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh!=PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  gknobPsuh = NO_PUSH;
+  userConfig[currentUser].thicknessTrimmingMode=thickness;
 }
 /**
  * @brief Selection menu for thresholds 
@@ -760,9 +1575,9 @@ void MenuThreshold()
   do
   {
       ArrowIndex(0);
-     if(knobPsuh == PUSH)
+     if(gknobPsuh == PUSH)
      {
-       knobPsuh=NO_PUSH;
+       gknobPsuh=NO_PUSH;
        switch (arrowIndexRow)
        {
           case 1 :
@@ -778,8 +1593,7 @@ void MenuThreshold()
        }
       //fixed text display
       lcdClear();
-      lcd.setCursor(0,arrowIndexRow);
-      lcd.write((byte)0);
+      ArrowIndex(FORCE);
       lcd.setCursor(0,0);
       lcd.print("-----Threshold------");
 
@@ -789,7 +1603,11 @@ void MenuThreshold()
       lcd.setCursor(1,2);
       lcd.print("Threshold to revwind ");
      }
-  }while (knobPsuh != LONG_PUSH);
+     gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh != LONG_PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
   
   
 }
@@ -810,8 +1628,8 @@ void ScreenThreshold()
   do
   {
     delay(10);    
-  }while(knobPsuh != PUSH);
-  knobPsuh=NO_PUSH;
+  }while(gknobPsuh != PUSH);
+  gknobPsuh=NO_PUSH;
 }
 /**
  * @brief Threshold to cut setting menu 
@@ -827,18 +1645,22 @@ void MenuThresholdToCut()
   lcd.print("--Threshold to cut--");
   lcd.setCursor(1,1);
   lcd.print("Position = ");
-  knobPsuh=NO_PUSH;
+  gknobPsuh=NO_PUSH;
   //stores the user's threshold to cut value
   do 
   {
     //Reading the analog value of the position potentiometer
-    valAdc = analogRead(ADC_POT);
+    gvalAdc = analogRead(ADC_POT);
     //displays the value of the potentiometer and after averaging 
     ShowPot(12,1);
-    //saves the current user value
-    userConfig[currentUser].thresholdToCut = valAdc;
-  }while (knobPsuh!=PUSH);
-  knobPsuh = NO_PUSH;
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh!=PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  //saves the current user value
+  userConfig[currentUser].thresholdToCut = gvalAdc;
+  gknobPsuh = NO_PUSH;
 }
 /**
  * @brief Threshold to Rewind setting menu 
@@ -854,18 +1676,22 @@ void MenuThresholdToRewind()
   lcd.print(" Threshold to rewind");
   lcd.setCursor(1,1);
   lcd.print("Position = ");
-  knobPsuh=NO_PUSH;
+  gknobPsuh=NO_PUSH;
   //stores the user's threshold to cut value
   do 
   {
     //Reading the analog value of the position potentiometer
-    valAdc = analogRead(ADC_POT);
+    gvalAdc = analogRead(ADC_POT);
     //displays the value of the potentiometer and after averaging 
     ShowPot(12,1);
-    //saves the current user value
-    userConfig[currentUser].thresholdToRewind = valAdc;
-  }while (knobPsuh!=PUSH);
-  knobPsuh=NO_PUSH;
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh!=PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  //saves the current user value
+   userConfig[currentUser].thresholdToRewind = gvalAdc;
+  gknobPsuh=NO_PUSH;
 }
 /**
  * @brief Alarm setup menu
@@ -894,9 +1720,9 @@ void MenuAlarm()
   do
   {
       ArrowIndex(0);
-     if(knobPsuh == PUSH)
+     if(gknobPsuh == PUSH)
      {
-       knobPsuh=NO_PUSH;
+       gknobPsuh=NO_PUSH;
        switch (arrowIndexRow)
        {
           case 1 :
@@ -928,12 +1754,16 @@ void MenuAlarm()
       lcd.setCursor(1,2);
       lcd.print("Alarm Setting");
      }
-  }while (knobPsuh != LONG_PUSH);
+     gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh != LONG_PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
 }
 void MenuAlarmState()
 {
   static bool toggle = true;
-  knobPsuh=NO_PUSH;
+  gknobPsuh=NO_PUSH;
   //displays fixed text 
  
    
@@ -977,8 +1807,12 @@ void MenuAlarmState()
       lcd.setCursor(9,2);
       lcd.print(myString);
     }
-  }while (knobPsuh != PUSH);
-  knobPsuh =NO_PUSH;
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh != PUSH&&gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  gknobPsuh =NO_PUSH;
 }
 /**
  * @brief Alarm temperatur setting
@@ -1009,8 +1843,12 @@ void MenuAlarmSetting()
       lcd.print(tempAlarmDegree);
       RemoveZero(tempAlarmDegree,9,2);
     }
-  }while (knobPsuh != PUSH);
-  knobPsuh = NO_PUSH;
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  }while (gknobPsuh != PUSH && gbtnBackPressed == 1);
+  do
+    gbtnBackPressed =  mcp230xx_getChannel(&mcp23017config,BTN_ROLL);
+  while (!gbtnBackPressed);
+  gknobPsuh = NO_PUSH;
   userConfig[currentUser].tempAlarmDegree = tempAlarmDegree;
 }
 /**
@@ -1120,12 +1958,12 @@ void knobSwitchDetection()
       //test if the button has been pressed long enough
       if((timer-timerMemo) > LONG_PUSH_TIME)
       {
-          knobPsuh = LONG_PUSH;
+          gknobPsuh = LONG_PUSH;
       }
       //bounce eliminator
       else if((timer-timerMemo) > BOUNCE_ELIM_TIME)
       {
-         knobPsuh = PUSH;
+         gknobPsuh = PUSH;
       }
       
   }  
@@ -1137,8 +1975,8 @@ void knobSwitchDetection()
  */
 void ArrowIndex(bool force)
 {
-  flagUpperMenu=false;
-  flagLowerMenu=false;
+  gflagUpperMenu=false;
+  gflagLowerMenu=false;
   //test if the encoder has rotated 
   if(knobRotation!=NO_ROTATION )
   {  
@@ -1157,13 +1995,13 @@ void ArrowIndex(bool force)
     //indicates that we have rotated up or down the screen
     if(arrowOldPosition==MAX_ROW_INDEX_LCD && arrowIndexRow==1 )
     {
-      flagUpperMenu=false;
-      flagLowerMenu=true;
+      gflagUpperMenu=false;
+      gflagLowerMenu=true;
     }
     else if (arrowOldPosition==1 && arrowIndexRow==MAX_ROW_INDEX_LCD)
     {
-      flagUpperMenu=true;
-      flagLowerMenu=false;
+      gflagUpperMenu=true;
+      gflagLowerMenu=false;
     }
     //displays the cursor at the new position 
     lcd.setCursor(0,arrowIndexRow);
@@ -1207,16 +2045,39 @@ void lcdClear()
  */
 void ShowPot(unsigned char columns, unsigned char raw)
 {  
-  valAdc = analogRead(ADC_POT);
+  gvalAdc = analogRead(ADC_POT);
   //calculates the average of the adc values
-  valAdc = AverageAdc(valAdc);
+  gvalAdc = AverageAdc(gvalAdc);
   //convert to string 
-  myString = String (valAdc);
+  myString = String (gvalAdc);
   lcd.setCursor (columns,raw);
   //Serial.print(columns);
   //lcd.print(myString);
   lcd.print(myString);
-  RemoveZero(valAdc,columns,raw);
+  RemoveZero(gvalAdc,columns,raw);
+}
+/**
+ * @brief Calculation of NTC température
+ * 
+ * @param UR10K Ref. Resistor input voltage
+ * @param NTC NTC circuit settings (RTh beta, RTh@0degree, RRef value)
+ * @return float Temperature in degree C
+ */
+float calcNTCTemp(int UR10K, NTCsensor * NTC){
+
+  //Variables
+  float RT, ln, TX, T0, Rvoltage;
+
+  T0 = NTC->settings.Th0 + 273.15; //Temperature T0 from datasheet, conversion from Celsius to kelvin
+  Rvoltage = (float)UR10K/1000.0;
+  RT = (VCC - Rvoltage) / (Rvoltage/NTC->settings.RRef);
+  NTC->measure.RThValue=RT;
+  ln = log(RT / NTC->settings.RTh0);
+  TX = (1 / ((ln / NTC->settings.RThbeta) + (1 / T0))); //Temperature from thermistor
+  TX = TX - 273.15; //Conversion to Celsius
+  NTC->measure.Temp=TX;
+  return (TX);
+
 }
 /**
  * @brief Port init Arduino MKRZERO
@@ -1228,18 +2089,19 @@ void PortInit()
   pinMode(ADC_NTC,INPUT);
   pinMode(Buzzer,OUTPUT);
   pinMode(MCP23017_INTB,INPUT);
-  pinMode(MCP23017_INTB,INPUT);
-  pinMode(MCP23017_RESET,INPUT);
+  pinMode(MCP23017_INTA,INPUT);
+  pinMode(MCP23017_RESET,OUTPUT);
   pinMode(KNOB_CHANNEL_B,INPUT);
   pinMode(KNOB_CHANNEL_A,INPUT);
   pinMode(KNOB_SWITCH_A,INPUT);
   pinMode(PCA9629A_INT,INPUT);
   pinMode(DEBUG1,OUTPUT);
-  pinMode(DEBUG2,OUTPUT);
+  pinMode(DEBUG2,INPUT);
   pinMode(SDA,INPUT);
   pinMode(SCL,INPUT);
+  
 }  
-#ifndef SERIAL_DEBUG
+#ifdef SERIAL_DEBUG
 void TestSD()
 {
   Serial.begin(9600);

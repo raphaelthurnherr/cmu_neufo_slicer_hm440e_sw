@@ -12,6 +12,7 @@
 #ifndef MCP230xx_H
 #define MCP230xx_H
 
+
 /**
  * \struct mcp23008 [mcp23008.h] Configuration structure definition
  */
@@ -45,7 +46,7 @@ extern int mcp23017_init(device_mcp230xx *mcp23017config);        // MCP23017 dr
  * \param pointer on the configuration structure
  * \return code error
  */
-extern int mcp23008_getChannel(device_mcp230xx *mcp23008config, unsigned char channel);
+extern int mcp230xx_getChannel(device_mcp230xx *mcp23008config, unsigned char channel);
 
 
 /**
@@ -53,7 +54,18 @@ extern int mcp23008_getChannel(device_mcp230xx *mcp23008config, unsigned char ch
  * \param pointer on the configuration structure
  * \return code error
  */
-extern int mcp23008_setChannel(device_mcp230xx *mcp23008config, unsigned char channel, unsigned char state);
+extern int mcp230xx_setChannel(device_mcp230xx *mcp23008config, unsigned char channel, unsigned char state);
+
+/**
+ * @brief select the output polarity of the interrupt pins.
+ * Disables the ODR bit of the IOCON register, be careful this configures the output to push-pull 
+ *
+ * @param pointer on the configuration structure
+ * @param polarity, output Polarity, 1 = Active-high, 0 = Active-low
+ * @return int 
+ */
+
+extern int mcp230xx_setIntPolaity(device_mcp230xx *mcp230xxconfig, unsigned char INTx,  unsigned char polarity );
 
 /**
  * \brief MCP23008 set output values on all GPIO port bits
@@ -62,15 +74,42 @@ extern int mcp23008_setChannel(device_mcp230xx *mcp23008config, unsigned char ch
  * \return code error
  */
 extern int mcp23008_setPort(device_mcp230xx *mcp23008config, unsigned char value);
-
+/**
+ * \brief MCP23017 set output values on all GPIO port bits
+ * \param pointer on the configuration structure
+ * \param value, value to apply on outputs
+ * \return code error
+ */
+extern int mcp23017_setPort(device_mcp230xx *mcp230xxconfig, unsigned char value);
 /**
  * \brief MCP23008 get input value on GPIO port
  * \param pointer on the configuration structure
  * \return code error
  */
-extern int mcp23008_getPort(device_mcp230xx *mcp23008config);
-
-
+extern int mcp230xx_getPort(device_mcp230xx *mcp23008config);
+/**
+ * @brief 
+ * 
+ * @param mcp230xxconfig 
+ * @param channel 
+ * @param state 
+ * @return code error 
+ */
+extern int mcp230xx_DEFVAL(device_mcp230xx *mcp230xxconfig, unsigned char channel, unsigned char state);
+/**
+ * @brief 
+ * 
+ * @param mcp230xxconfig 
+ * @param chanel 
+ * @param value 
+ * @return code error 
+ */
+extern int mcp230xx_INTCON(device_mcp230xx *mcp230xxconfig,unsigned char chanel, unsigned char value);
+/**
+ * @brief 
+ * 
+ */
+extern int mcp230xx_intConfig(device_mcp230xx *mcp230xxconfig, unsigned char channel, unsigned char edge);
 
 extern int actuator_getDigitalInput(device_mcp230xx *mcp230xxconfig, unsigned char channel);
 extern char actuator_setDigitalOutput(device_mcp230xx *mcp230xxconfig, unsigned char channel, unsigned char state);
