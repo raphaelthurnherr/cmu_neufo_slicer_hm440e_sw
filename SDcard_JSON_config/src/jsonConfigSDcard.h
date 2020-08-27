@@ -37,10 +37,10 @@ typedef struct SLICER_CONFIG {
     unsigned char MovingSpeed;
     unsigned char ScreenBacklight;
     struct t_NTCsensor{
-            int RThbeta=3950;  
+            int RThbeta=3435;  
             int RTh0=10000;
             int Th0=25;
-            int RRef=9970;
+            int RRef=10000;
     }NTCsensor;
 
 } SLICERCONFIG;

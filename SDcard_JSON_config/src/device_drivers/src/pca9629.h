@@ -33,7 +33,7 @@
 typedef struct pca9629{
     char deviceName[25];                        // Device Name of IC
     unsigned char deviceAddress;                // Bus device address
-    float pulsesWidth_ms;               // Specify the pulse width for motor driving
+    float pulsesWidth_ms;                       // Specify the pulse width for motor driving
     unsigned char bipolar_mode;
 } device_pca9629;
 
