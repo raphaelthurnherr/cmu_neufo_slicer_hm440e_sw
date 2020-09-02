@@ -12,5 +12,5 @@
 
 #define IC1_PCA9629A_ADR    0x20
 
-#define IC1_PULSE_WIDTH_MS     1
+#define IC1_PULSE_WIDTH_MS     5
 #define IC1_MOTOR_MODE_BIPOLAR 1

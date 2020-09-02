@@ -12,7 +12,7 @@ class board_2004_01_V01{
         board_2004_01_V01(void);
         void begin(void);
         int getStepperState(unsigned char motorNumber);
-        void stepperRotation(char motor, char speed, int steps);
+        void stepperRotation(char motor, int speed, int steps);
         int setStepperDriveMode(char motorNumber, unsigned char driveMode);
 
     protected:
